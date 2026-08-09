@@ -2,12 +2,22 @@ import 'package:go_router/go_router.dart';
 import '../../features/dev/foundation_screen.dart';
 import '../../features/splash/splash_screen.dart';
 import '../../features/onboarding/onboarding_screen.dart';
-import '../../features/auth/login_placeholder.dart';
+import '../../features/auth/screens/login_screen.dart';
+import '../../features/auth/screens/register_screen.dart';
+import '../../features/auth/screens/forgot_password_screen.dart';
+import '../../features/auth/screens/verification_screen.dart';
+import '../../features/auth/screens/reset_password_screen.dart';
+import '../../features/auth/screens/auth_placeholder.dart';
 
 class AppRouter {
   static const String splash = '/';
   static const String onboarding = '/onboarding';
   static const String login = '/login';
+  static const String register = '/register';
+  static const String forgotPassword = '/forgot-password';
+  static const String verification = '/verification';
+  static const String resetPassword = '/reset-password';
+  static const String authPlaceholder = '/auth-placeholder';
   static const String foundation = '/foundation';
 
   static final GoRouter router = GoRouter(
@@ -23,7 +33,30 @@ class AppRouter {
       ),
       GoRoute(
         path: login,
-        builder: (context, state) => const LoginPlaceholder(),
+        builder: (context, state) => const LoginScreen(),
+      ),
+      GoRoute(
+        path: register,
+        builder: (context, state) => const RegisterScreen(),
+      ),
+      GoRoute(
+        path: forgotPassword,
+        builder: (context, state) => const ForgotPasswordScreen(),
+      ),
+      GoRoute(
+        path: verification,
+        builder: (context, state) {
+          final type = state.extra as String?;
+          return VerificationScreen(type: type);
+        },
+      ),
+      GoRoute(
+        path: resetPassword,
+        builder: (context, state) => const ResetPasswordScreen(),
+      ),
+      GoRoute(
+        path: authPlaceholder,
+        builder: (context, state) => const AuthPlaceholder(),
       ),
       GoRoute(
         path: foundation,
