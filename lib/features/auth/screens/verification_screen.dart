@@ -1,25 +1,61 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../../shared/widgets/app_button.dart';
+import '../services/auth_service.dart';
 
 class VerificationScreen extends StatefulWidget {
-  final String? type; // 'register' or 'reset'
-  const VerificationScreen({super.key, this.type});
+  final String email;
+  final String? type; // 'signup' or 'recovery'
+  const VerificationScreen({super.key, required this.email, this.type});
 
   @override
   State<VerificationScreen> createState() => _VerificationScreenState();
 }
 
 class _VerificationScreenState extends State<VerificationScreen> {
+  final _authService = AuthService();
   final List<TextEditingController> _controllers = List.generate(6, (_) => TextEditingController());
   final List<FocusNode> _focusNodes = List.generate(6, (_) => FocusNode());
   bool _isLoading = false;
   String? _errorText;
+  
+  // Resend Timer
+  int _start = 60;
+  Timer? _timer;
+  bool _canResend = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _startTimer();
+  }
+
+  void _startTimer() {
+    setState(() {
+      _start = 60;
+      _canResend = false;
+    });
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (_start == 0) {
+        setState(() {
+          _canResend = true;
+          timer.cancel();
+        });
+      } else {
+        setState(() {
+          _start--;
+        });
+      }
+    });
+  }
 
   @override
   void dispose() {
+    _timer?.cancel();
     for (var c in _controllers) {
       c.dispose();
     }
@@ -41,14 +77,58 @@ class _VerificationScreenState extends State<VerificationScreen> {
       _isLoading = true;
     });
 
-    await Future.delayed(const Duration(seconds: 2));
+    try {
+      final OtpType otpType = widget.type == 'recovery' ? OtpType.recovery : OtpType.signup;
+      
+      await _authService.verifyOtp(
+        email: widget.email,
+        token: code,
+        type: otpType,
+      );
 
-    if (mounted) {
-      setState(() => _isLoading = false);
-      if (widget.type == 'reset') {
-        context.pushReplacement('/reset-password');
-      } else {
-        context.go('/auth-placeholder');
+      if (mounted) {
+        setState(() => _isLoading = false);
+        if (widget.type == 'recovery') {
+          context.pushReplacement('/reset-password');
+        } else {
+          context.go('/auth-placeholder');
+        }
+      }
+    } on AuthException catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _errorText = e.message;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _errorText = 'An unexpected error occurred';
+        });
+      }
+    }
+  }
+
+  void _resendCode() async {
+    if (!_canResend) return;
+
+    try {
+      final OtpType otpType = widget.type == 'recovery' ? OtpType.recovery : OtpType.signup;
+      await _authService.resendOtp(email: widget.email, type: otpType);
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Verification code resent!')),
+        );
+        _startTimer();
+      }
+    } on AuthException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.message)),
+        );
       }
     }
   }
@@ -142,14 +222,15 @@ class _VerificationScreenState extends State<VerificationScreen> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text(
-                        "Didn't receive a code?",
+                        _canResend ? "Didn't receive a code?" : "Resend code in ${_start}s",
                         style: Theme.of(context).textTheme.bodyMedium,
                       ),
-                      AppButton(
-                        text: 'Resend',
-                        type: AppButtonType.text,
-                        onPressed: () {},
-                      ),
+                      if (_canResend)
+                        AppButton(
+                          text: 'Resend',
+                          type: AppButtonType.text,
+                          onPressed: _resendCode,
+                        ),
                     ],
                   ),
                 ],

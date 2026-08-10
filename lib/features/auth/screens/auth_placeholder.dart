@@ -2,12 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/constants/app_sizes.dart';
 import '../../../shared/widgets/app_button.dart';
+import '../services/auth_service.dart';
 
 class AuthPlaceholder extends StatelessWidget {
   const AuthPlaceholder({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final authService = AuthService();
+    final user = authService.currentUser;
+
     return Scaffold(
       body: SafeArea(
         child: Center(
@@ -27,20 +31,25 @@ class AuthPlaceholder extends StatelessWidget {
                   ),
                   Gap.h24,
                   Text(
-                    'Authentication UI complete.',
+                    'Welcome, ${user?.email ?? 'User'}!',
                     style: Theme.of(context).textTheme.headlineSmall,
                     textAlign: TextAlign.center,
                   ),
                   Gap.h16,
                   Text(
-                    'Home will be implemented in the next application phase.',
+                    'Authentication UI complete with Supabase.',
                     style: Theme.of(context).textTheme.bodyLarge,
                     textAlign: TextAlign.center,
                   ),
                   Gap.h48,
                   AppButton(
-                    text: 'Back to Login',
-                    onPressed: () => context.go('/login'),
+                    text: 'Sign Out',
+                    onPressed: () async {
+                      await authService.signOut();
+                      if (context.mounted) {
+                        context.go('/login');
+                      }
+                    },
                   ),
                 ],
               ),
