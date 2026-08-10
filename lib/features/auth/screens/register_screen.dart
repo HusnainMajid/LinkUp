@@ -60,9 +60,31 @@ class _RegisterScreenState extends State<RegisterScreen> {
           fullName: _nameController.text.trim(),
           username: _usernameController.text.trim(),
         );
+
+        // Since "Confirm Email" is OFF, we sign out the auto-session 
+        // to let the user login manually as requested.
+        await _authService.signOut();
+
         if (mounted) {
           setState(() => _isLoading = false);
-          // Redirection to check-email is handled by the router based on auth state
+          
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (context) => AlertDialog(
+              title: const Text('Account Created'),
+              content: const Text('Your account has been created successfully. Please log in with your credentials to continue.'),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(context); // Close dialog
+                    context.go('/login'); // Go to login screen
+                  },
+                  child: const Text('Log In Now'),
+                ),
+              ],
+            ),
+          );
         }
       } on AuthException catch (e) {
         if (mounted) {

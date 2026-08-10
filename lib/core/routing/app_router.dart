@@ -7,7 +7,6 @@ import '../../features/onboarding/onboarding_screen.dart';
 import '../../features/auth/screens/login_screen.dart';
 import '../../features/auth/screens/register_screen.dart';
 import '../../features/auth/screens/forgot_password_screen.dart';
-import '../../features/auth/screens/check_email_screen.dart';
 import '../../features/auth/screens/reset_password_screen.dart';
 import '../../features/home/screens/home_screen.dart';
 
@@ -26,7 +25,6 @@ class AppRouter {
     initialLocation: splash,
     refreshListenable: AuthListenable(),
     redirect: (context, state) {
-      final user = Supabase.instance.client.auth.currentUser;
       final session = Supabase.instance.client.auth.currentSession;
       
       final bool loggingIn = state.matchedLocation == login || 
@@ -39,15 +37,8 @@ class AppRouter {
         return loggingIn ? null : login;
       }
 
-      // Check if email is confirmed
-      final bool isEmailConfirmed = user?.emailConfirmedAt != null;
-
-      if (!isEmailConfirmed) {
-        return state.matchedLocation == checkEmail ? null : checkEmail;
-      }
-
-      // If logged in and confirmed, but trying to access auth screens
-      if (loggingIn || state.matchedLocation == checkEmail) {
+      // If logged in but on an auth screen, go to home
+      if (loggingIn) {
         return home;
       }
 
@@ -73,13 +64,6 @@ class AppRouter {
       GoRoute(
         path: forgotPassword,
         builder: (context, state) => const ForgotPasswordScreen(),
-      ),
-      GoRoute(
-        path: checkEmail,
-        builder: (context, state) {
-          final user = Supabase.instance.client.auth.currentUser;
-          return CheckEmailScreen(email: user?.email ?? '');
-        },
       ),
       GoRoute(
         path: resetPassword,
