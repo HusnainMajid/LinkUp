@@ -8,7 +8,13 @@ import '../../features/auth/screens/login_screen.dart';
 import '../../features/auth/screens/register_screen.dart';
 import '../../features/auth/screens/forgot_password_screen.dart';
 import '../../features/auth/screens/reset_password_screen.dart';
-import '../../features/home/screens/home_screen.dart';
+import '../../features/home/presentation/screens/home_screen.dart';
+import '../../features/chats/presentation/screens/chats_screen.dart';
+import '../../features/groups/presentation/screens/groups_screen.dart';
+import '../../features/hub/presentation/screens/hub_screen.dart';
+import '../../features/profile/presentation/screens/profile_screen.dart';
+import '../../features/profile/presentation/screens/edit_profile_screen.dart';
+import '../../shared/widgets/main_shell.dart';
 
 class AppRouter {
   static const String splash = '/';
@@ -19,6 +25,11 @@ class AppRouter {
   static const String checkEmail = '/check-email';
   static const String resetPassword = '/reset-password';
   static const String home = '/home';
+  static const String chats = '/chats';
+  static const String groups = '/groups';
+  static const String hub = '/hub';
+  static const String profile = '/profile';
+  static const String editProfile = '/profile/edit';
   static const String foundation = '/foundation';
 
   static final GoRouter router = GoRouter(
@@ -69,9 +80,59 @@ class AppRouter {
         path: resetPassword,
         builder: (context, state) => const ResetPasswordScreen(),
       ),
-      GoRoute(
-        path: home,
-        builder: (context, state) => const HomeScreen(),
+      // Authenticated Shell
+      StatefulShellRoute.indexedStack(
+        builder: (context, state, navigationShell) {
+          return MainShell(navigationShell: navigationShell);
+        },
+        branches: [
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: home,
+                builder: (context, state) => const HomeScreen(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: chats,
+                builder: (context, state) => const ChatsScreen(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: groups,
+                builder: (context, state) => const GroupsScreen(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: hub,
+                builder: (context, state) => const HubScreen(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: profile,
+                builder: (context, state) => const ProfileScreen(),
+                routes: [
+                  GoRoute(
+                    path: 'edit',
+                    builder: (context, state) => const EditProfileScreen(),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ],
       ),
       GoRoute(
         path: foundation,

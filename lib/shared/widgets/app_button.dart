@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../core/constants/app_sizes.dart';
+import '../../core/theme/app_colors.dart';
 
-enum AppButtonType { primary, secondary, outlined, text }
+enum AppButtonType { primary, secondary, outlined, text, gradient }
 
 class AppButton extends StatelessWidget {
   final String text;
@@ -30,12 +31,16 @@ class AppButton extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         if (isLoading) ...[
-          const SizedBox(
+          SizedBox(
             width: 20,
             height: 20,
             child: CircularProgressIndicator(
               strokeWidth: 2,
-              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+              valueColor: AlwaysStoppedAnimation<Color>(
+                type == AppButtonType.outlined || type == AppButtonType.text
+                    ? theme.primaryColor
+                    : Colors.white,
+              ),
             ),
           ),
           Gap.w8,
@@ -77,7 +82,7 @@ class AppButton extends StatelessWidget {
           child: OutlinedButton(
             onPressed: isLoading ? null : onPressed,
             style: OutlinedButton.styleFrom(
-              minimumSize: const Size(double.infinity, AppSizes.buttonHeight),
+              side: BorderSide(color: theme.primaryColor.withValues(alpha: 0.5)),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(AppSizes.radiusMedium),
               ),
@@ -89,6 +94,25 @@ class AppButton extends StatelessWidget {
         return TextButton(
           onPressed: isLoading ? null : onPressed,
           child: content,
+        );
+      case AppButtonType.gradient:
+        return Container(
+          width: width ?? double.infinity,
+          height: AppSizes.buttonHeight,
+          decoration: BoxDecoration(
+            gradient: AppColors.primaryGradient,
+            borderRadius: BorderRadius.circular(AppSizes.radiusMedium),
+          ),
+          child: ElevatedButton(
+            onPressed: isLoading ? null : onPressed,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.transparent,
+              foregroundColor: Colors.white,
+              shadowColor: Colors.transparent,
+              elevation: 0,
+            ),
+            child: content,
+          ),
         );
     }
   }

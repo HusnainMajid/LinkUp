@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../../core/constants/app_sizes.dart';
+import '../../core/theme/app_colors.dart';
 
 class AppCard extends StatelessWidget {
   final Widget child;
@@ -7,6 +7,8 @@ class AppCard extends StatelessWidget {
   final Color? color;
   final double? elevation;
   final VoidCallback? onTap;
+  final bool useGradient;
+  final Gradient? gradient;
 
   const AppCard({
     super.key,
@@ -15,19 +17,42 @@ class AppCard extends StatelessWidget {
     this.color,
     this.elevation,
     this.onTap,
+    this.useGradient = false,
+    this.gradient,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      color: color,
-      elevation: elevation ?? AppSizes.elevationSmall,
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: padding ?? const EdgeInsets.all(AppSizes.p16),
-          child: child,
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    
+    return Container(
+      decoration: BoxDecoration(
+        color: useGradient ? null : color ?? (isDark ? AppColors.cardDark : theme.cardTheme.color),
+        gradient: useGradient ? gradient ?? AppColors.heroGradient : null,
+        borderRadius: BorderRadius.circular(24),
+        border: !isDark
+            ? Border.all(color: Colors.grey.shade200)
+            : Border.all(color: Colors.white.withValues(alpha: 0.05)),
+        boxShadow: elevation != null && elevation! > 0
+            ? [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.1),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                )
+              ]
+            : null,
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(24),
+          child: Padding(
+            padding: padding ?? const EdgeInsets.all(20),
+            child: child,
+          ),
         ),
       ),
     );
