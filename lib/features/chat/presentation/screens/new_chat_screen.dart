@@ -7,6 +7,8 @@ import '../../../../shared/widgets/app_card.dart';
 import '../../../../shared/widgets/app_text_field.dart';
 import '../../../auth/models/profile_model.dart';
 import '../../data/repositories/chat_repository.dart';
+import '../../data/repositories/friend_repository.dart';
+import '../../data/models/friend_request_model.dart';
 
 class NewChatScreen extends StatefulWidget {
   const NewChatScreen({super.key});
@@ -17,9 +19,11 @@ class NewChatScreen extends StatefulWidget {
 
 class _NewChatScreenState extends State<NewChatScreen> {
   final _chatRepository = ChatRepository();
+  final _friendRepository = FriendRepository();
   final _searchController = TextEditingController();
   Timer? _debounce;
   List<Profile> _results = [];
+  Map<String, FriendStatus> _friendStatuses = {};
   bool _isLoading = false;
   bool _hasSearched = false;
 
@@ -45,9 +49,15 @@ class _NewChatScreenState extends State<NewChatScreen> {
 
     try {
       final results = await _chatRepository.searchUsers(query);
+      Map<String, FriendStatus> statuses = {};
+      for (var user in results) {
+        statuses[user.id] = await _friendRepository.getFriendStatus(user.id);
+      }
+
       if (mounted) {
         setState(() {
           _results = results;
+          _friendStatuses = statuses;
           _isLoading = false;
         });
       }
@@ -58,6 +68,25 @@ class _NewChatScreenState extends State<NewChatScreen> {
           const SnackBar(content: Text('Unable to search users. Try again.')),
         );
       }
+    }
+  }
+
+  Future<void> _handleAction(Profile user) async {
+    final status = _friendStatuses[user.id] ?? FriendStatus.none;
+
+    if (status == FriendStatus.friends) {
+      try {
+        final conversationId = await _chatRepository.getOrCreateDirectConversation(user.id);
+        if (mounted) context.pushReplacement('/chat/$conversationId');
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(e.toString().replaceAll('Exception: ', ''))),
+          );
+        }
+      }
+    } else {
+      context.push('/user/${user.id}');
     }
   }
 
@@ -153,11 +182,13 @@ class _NewChatScreenState extends State<NewChatScreen> {
       itemCount: _results.length,
       itemBuilder: (context, index) {
         final profile = _results[index];
+        final status = _friendStatuses[profile.id] ?? FriendStatus.none;
+
         return Padding(
           padding: const EdgeInsets.only(bottom: 12),
           child: AppCard(
             padding: EdgeInsets.zero,
-            onTap: () => context.push('/user/${profile.id}'),
+            onTap: () => _handleAction(profile),
             child: ListTile(
               contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               leading: AppAvatar(
@@ -173,11 +204,23 @@ class _NewChatScreenState extends State<NewChatScreen> {
                 '@${profile.username ?? 'username'}',
                 style: const TextStyle(color: AppColors.primary, fontSize: 12, fontWeight: FontWeight.w500),
               ),
-              trailing: const Icon(Icons.chevron_right_rounded, size: 20, color: Colors.grey),
+              trailing: _buildTrailing(status),
             ),
           ),
         );
       },
     );
+  }
+
+  Widget _buildTrailing(FriendStatus status) {
+    switch (status) {
+      case FriendStatus.friends:
+        return const Icon(Icons.chat_bubble_outline_rounded, size: 20, color: AppColors.primary);
+      case FriendStatus.pendingSent:
+      case FriendStatus.pendingReceived:
+        return const Icon(Icons.hourglass_empty_rounded, size: 20, color: Colors.orange);
+      default:
+        return const Icon(Icons.person_add_alt_1_rounded, size: 20, color: Colors.grey);
+    }
   }
 }

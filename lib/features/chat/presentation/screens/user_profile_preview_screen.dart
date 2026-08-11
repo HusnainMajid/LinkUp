@@ -6,6 +6,8 @@ import '../../../../shared/widgets/app_button.dart';
 import '../../../../shared/widgets/app_card.dart';
 import '../../../auth/models/profile_model.dart';
 import '../../data/repositories/chat_repository.dart';
+import '../../data/repositories/friend_repository.dart';
+import '../../data/models/friend_request_model.dart';
 
 class UserProfilePreviewScreen extends StatefulWidget {
   final String userId;
@@ -17,22 +19,26 @@ class UserProfilePreviewScreen extends StatefulWidget {
 
 class _UserProfilePreviewScreenState extends State<UserProfilePreviewScreen> {
   final _chatRepository = ChatRepository();
+  final _friendRepository = FriendRepository();
   Profile? _profile;
+  FriendStatus _friendStatus = FriendStatus.none;
   bool _isLoading = true;
-  bool _isCreatingChat = false;
+  bool _isActionLoading = false;
 
   @override
   void initState() {
     super.initState();
-    _loadProfile();
+    _loadData();
   }
 
-  Future<void> _loadProfile() async {
+  Future<void> _loadData() async {
     try {
       final profile = await _chatRepository.getUserProfile(widget.userId);
+      final status = await _friendRepository.getFriendStatus(widget.userId);
       if (mounted) {
         setState(() {
           _profile = profile;
+          _friendStatus = status;
           _isLoading = false;
         });
       }
@@ -40,27 +46,73 @@ class _UserProfilePreviewScreenState extends State<UserProfilePreviewScreen> {
       if (mounted) {
         setState(() => _isLoading = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to load user profile.')),
+          const SnackBar(content: Text('Failed to load user data.')),
         );
       }
+    }
+  }
+
+  Future<void> _sendFriendRequest() async {
+    setState(() => _isActionLoading = true);
+    try {
+      await _friendRepository.sendFriendRequest(widget.userId);
+      await _loadData();
+    } finally {
+      if (mounted) setState(() => _isActionLoading = false);
+    }
+  }
+
+  Future<void> _respondToRequest(bool accept) async {
+    setState(() => _isActionLoading = true);
+    try {
+      final requests = await _friendRepository.getIncomingRequests();
+      final request = requests.firstWhere((r) => r.senderId == widget.userId);
+      await _friendRepository.respondToFriendRequest(request.id, accept);
+      await _loadData();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to respond to request.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isActionLoading = false);
+    }
+  }
+
+  Future<void> _cancelRequest() async {
+    setState(() => _isActionLoading = true);
+    try {
+      final requests = await _friendRepository.getOutgoingRequests();
+      final request = requests.firstWhere((r) => r.receiverId == widget.userId);
+      await _friendRepository.cancelFriendRequest(request.id);
+      await _loadData();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to cancel request.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isActionLoading = false);
     }
   }
 
   Future<void> _startConversation() async {
     if (_profile == null) return;
     
-    setState(() => _isCreatingChat = true);
+    setState(() => _isActionLoading = true);
     try {
       final conversationId = await _chatRepository.getOrCreateDirectConversation(_profile!.id);
       if (mounted) {
-        setState(() => _isCreatingChat = false);
+        setState(() => _isActionLoading = false);
         context.pushReplacement('/chat/$conversationId');
       }
     } catch (e) {
       if (mounted) {
-        setState(() => _isCreatingChat = false);
+        setState(() => _isActionLoading = false);
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to start conversation.')),
+          SnackBar(content: Text(e.toString().replaceAll('Exception: ', ''))),
         );
       }
     }
@@ -136,15 +188,65 @@ class _UserProfilePreviewScreenState extends State<UserProfilePreviewScreen> {
               ),
               const SizedBox(height: 24),
             ],
-            AppButton(
-              text: 'Message',
-              type: AppButtonType.gradient,
-              isLoading: _isCreatingChat,
-              onPressed: _startConversation,
-            ),
+            _buildActionButtons(),
           ],
         ),
       ),
     );
+  }
+
+  Widget _buildActionButtons() {
+    switch (_friendStatus) {
+      case FriendStatus.friends:
+        return AppButton(
+          text: 'Message',
+          type: AppButtonType.gradient,
+          isLoading: _isActionLoading,
+          onPressed: _startConversation,
+        );
+      case FriendStatus.pendingSent:
+        return Column(
+          children: [
+            const Text('Friend Request Sent', style: TextStyle(color: Colors.grey)),
+            const SizedBox(height: 12),
+            AppButton(
+              text: 'Cancel Request',
+              type: AppButtonType.outlined,
+              isLoading: _isActionLoading,
+              onPressed: _cancelRequest,
+            ),
+          ],
+        );
+      case FriendStatus.pendingReceived:
+        return Row(
+          children: [
+            Expanded(
+              child: AppButton(
+                text: 'Decline',
+                type: AppButtonType.outlined,
+                isLoading: _isActionLoading,
+                onPressed: () => _respondToRequest(false),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: AppButton(
+                text: 'Accept',
+                type: AppButtonType.gradient,
+                isLoading: _isActionLoading,
+                onPressed: () => _respondToRequest(true),
+              ),
+            ),
+          ],
+        );
+      case FriendStatus.none:
+      case FriendStatus.rejected:
+        return AppButton(
+          text: 'Add Friend',
+          type: AppButtonType.gradient,
+          isLoading: _isActionLoading,
+          onPressed: _sendFriendRequest,
+        );
+    }
   }
 }

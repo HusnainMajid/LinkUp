@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' as sb;
@@ -8,6 +9,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:path/path.dart' as path;
 import '../../../../core/theme/app_colors.dart';
 import '../../../../shared/widgets/app_avatar.dart';
+import '../../../../shared/widgets/app_button.dart';
 import '../../../auth/models/profile_model.dart';
 import '../../data/models/message_model.dart';
 import '../../data/repositories/chat_repository.dart';
@@ -26,6 +28,7 @@ class _ChatScreenState extends State<ChatScreen> {
   final _scrollController = ScrollController();
   Profile? _otherParticipant;
   bool _isLoading = true;
+  bool _isFriends = true;
   bool _isInputEmpty = true;
   Stream<List<Message>>? _messageStream;
 
@@ -48,6 +51,17 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _loadConversationDetails() async {
     try {
+      final isFriends = await _chatRepository.isStillFriends(widget.conversationId);
+      if (!isFriends) {
+        if (mounted) {
+          setState(() {
+            _isFriends = false;
+            _isLoading = false;
+          });
+        }
+        return;
+      }
+
       final conversations = await _chatRepository.getUserConversations();
       final conversation = conversations.firstWhere((c) => c.id == widget.conversationId);
       
@@ -258,6 +272,41 @@ class _ChatScreenState extends State<ChatScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+
+    if (!_isLoading && !_isFriends) {
+      return Scaffold(
+        backgroundColor: isDark ? AppColors.backgroundDark : AppColors.background,
+        appBar: AppBar(title: const Text('Chat')),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.lock_person_rounded, size: 64, color: AppColors.primary.withValues(alpha: 0.2)),
+                const SizedBox(height: 24),
+                const Text(
+                  "You're no longer friends with this user.",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  "Conversation is locked until you become friends again.",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.grey),
+                ),
+                const SizedBox(height: 32),
+                AppButton(
+                  text: 'Back',
+                  onPressed: () => context.pop(),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
 
     return Scaffold(
       backgroundColor: isDark ? AppColors.backgroundDark : AppColors.background,

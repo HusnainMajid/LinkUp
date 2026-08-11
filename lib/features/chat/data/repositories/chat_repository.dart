@@ -22,11 +22,40 @@ class ChatRepository {
   }
 
   Future<String> getOrCreateDirectConversation(String otherUserId) async {
-    final response = await _supabase.rpc(
-      'get_or_create_direct_conversation',
-      params: {'other_user_id': otherUserId},
-    );
-    return response as String;
+    try {
+      final response = await _supabase.rpc(
+        'get_or_create_direct_conversation',
+        params: {'other_user_id': otherUserId},
+      );
+      return response as String;
+    } on PostgrestException catch (e) {
+      if (e.message.contains('friends')) {
+        throw Exception('Users must be friends before starting a conversation.');
+      }
+      rethrow;
+    }
+  }
+
+  Future<bool> isStillFriends(String conversationId) async {
+    final currentUserId = _supabase.auth.currentUser?.id;
+    if (currentUserId == null) return false;
+
+    final conversation = await _supabase
+        .from('conversation_members')
+        .select('user_id')
+        .eq('conversation_id', conversationId);
+    
+    final members = (conversation as List);
+    if (members.length != 2) return true; // Group chat or invalid
+
+    final otherUserId = members.firstWhere((m) => m['user_id'] != currentUserId)['user_id'];
+    
+    final result = await _supabase.rpc('is_friends', params: {
+      'user_a': currentUserId,
+      'user_b': otherUserId,
+    });
+    
+    return result as bool;
   }
 
   Future<List<Conversation>> getUserConversations() async {
@@ -54,17 +83,13 @@ class ChatRepository {
     final currentUserId = _supabase.auth.currentUser?.id;
     if (currentUserId == null) return Stream.value([]);
 
-    // Listen to changes in ANY of these tables:
-    // 1. conversation_members (when a new chat is started)
-    // 2. messages (when a message is sent/received, to update preview and order)
-    // 3. user_conversation_preferences (when a chat is pinned/archived)
-    
-    // We combine these into a single trigger stream
     return _supabase
         .from('conversation_members')
         .stream(primaryKey: ['conversation_id', 'user_id'])
         .eq('user_id', currentUserId)
-        .asyncMap((_) => getUserConversations());
+        .asyncMap((_) async {
+          return await getUserConversations();
+        });
   }
 
   // We need a better way to trigger updates on message receive.
@@ -76,7 +101,9 @@ class ChatRepository {
     return _supabase
         .from('messages')
         .stream(primaryKey: ['id'])
-        .map((_) => null);
+        .map((_) {
+          return;
+        });
   }
 
   // Conversation Management Methods

@@ -14,6 +14,8 @@ import '../../features/chat/presentation/screens/new_chat_screen.dart';
 import '../../features/chat/presentation/screens/user_profile_preview_screen.dart';
 import '../../features/chat/presentation/screens/chat_screen.dart';
 import '../../features/chat/presentation/screens/archived_chats_screen.dart';
+import '../../features/chat/presentation/screens/friends_screen.dart';
+import '../../features/chat/presentation/screens/friend_requests_screen.dart';
 import '../../features/groups/presentation/screens/groups_screen.dart';
 import '../../features/hub/presentation/screens/hub_screen.dart';
 import '../../features/profile/presentation/screens/profile_screen.dart';
@@ -34,6 +36,8 @@ class AppRouter {
   static const String userProfile = '/user/:userId';
   static const String chatRoom = '/chat/:conversationId';
   static const String archivedChats = '/archived-chats';
+  static const String friends = '/friends';
+  static const String friendRequests = '/friend-requests';
   static const String groups = '/groups';
   static const String hub = '/hub';
   static const String profile = '/profile';
@@ -104,6 +108,14 @@ class AppRouter {
       GoRoute(
         path: archivedChats,
         builder: (context, state) => const ArchivedChatsScreen(),
+      ),
+      GoRoute(
+        path: friends,
+        builder: (context, state) => const FriendsScreen(),
+      ),
+      GoRoute(
+        path: friendRequests,
+        builder: (context, state) => const FriendRequestsScreen(),
       ),
       GoRoute(
         path: chatRoom,

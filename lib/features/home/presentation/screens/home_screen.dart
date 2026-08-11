@@ -12,6 +12,8 @@ import '../../../auth/models/profile_model.dart';
 import '../../../chat/data/models/conversation_model.dart';
 import '../../../chat/data/repositories/chat_repository.dart';
 
+import '../../../chat/data/repositories/friend_repository.dart';
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -22,11 +24,14 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMixin {
   final _profileRepository = ProfileRepository();
   final _chatRepository = ChatRepository();
+  final _friendRepository = FriendRepository();
   Profile? _profile;
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   Stream<List<Conversation>>? _recentConversationsStream;
+  int _pendingRequestCount = 0;
   StreamSubscription? _triggerSubscription;
+  StreamSubscription? _friendSubscription;
 
   @override
   void initState() {
@@ -40,6 +45,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       curve: Curves.easeIn,
     );
     _loadProfile();
+    _loadPendingRequests();
     _recentConversationsStream = _chatRepository.subscribeToConversations();
     
     // Global trigger for real-time updates
@@ -50,11 +56,25 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         });
       }
     });
+
+    _friendSubscription = _friendRepository.subscribeToFriendRequests().listen((_) {
+      _loadPendingRequests();
+    });
+  }
+
+  Future<void> _loadPendingRequests() async {
+    try {
+      final requests = await _friendRepository.getIncomingRequests();
+      if (mounted) {
+        setState(() => _pendingRequestCount = requests.length);
+      }
+    } catch (_) {}
   }
 
   @override
   void dispose() {
     _triggerSubscription?.cancel();
+    _friendSubscription?.cancel();
     _animationController.dispose();
     super.dispose();
   }
@@ -225,43 +245,65 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            _buildActionItem(
-              Icons.chat_bubble_outline_rounded, 
-              'New Chat', 
-              onTap: () => context.push('/new-chat'),
-            ),
-            _buildActionItem(
-              Icons.group_add_outlined, 
-              'New Group',
-              onTap: () => context.go('/groups'),
-            ),
-            _buildActionItem(
-              Icons.task_alt_rounded, 
-              'Task',
-              onTap: () => context.go('/hub'),
-            ),
-            _buildActionItem(
-              Icons.event_note_rounded, 
-              'Event',
-              onTap: () => context.go('/hub'),
-            ),
+          _buildActionItem(
+            Icons.chat_bubble_outline_rounded, 
+            'New Chat', 
+            onTap: () => context.push('/new-chat'),
+          ),
+          _buildActionItem(
+            Icons.people_outline_rounded, 
+            'Friends',
+            onTap: () => context.push('/friends'),
+          ),
+          _buildActionItem(
+            Icons.person_add_outlined, 
+            'Requests',
+            onTap: () => context.push('/friend-requests'),
+            badgeCount: _pendingRequestCount,
+          ),
+          _buildActionItem(
+            Icons.group_add_outlined, 
+            'Group',
+            onTap: () => context.go('/groups'),
+          ),
           ],
         ),
       ],
     );
   }
 
-  Widget _buildActionItem(IconData icon, String label, {VoidCallback? onTap}) {
+  Widget _buildActionItem(IconData icon, String label, {VoidCallback? onTap, int badgeCount = 0}) {
     return Column(
       children: [
-        AppCard(
-          padding: const EdgeInsets.all(16),
-          onTap: onTap,
-          child: Icon(
-            icon, 
-            color: AppColors.primary, 
-            size: 24
-          ),
+        Stack(
+          clipBehavior: Clip.none,
+          children: [
+            AppCard(
+              padding: const EdgeInsets.all(16),
+              onTap: onTap,
+              child: Icon(
+                icon, 
+                color: AppColors.primary, 
+                size: 24
+              ),
+            ),
+            if (badgeCount > 0)
+              Positioned(
+                top: -5,
+                right: -5,
+                child: Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: const BoxDecoration(
+                    color: AppColors.error,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Text(
+                    badgeCount.toString(),
+                    style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+          ],
         ),
         const SizedBox(height: 8),
         Text(
