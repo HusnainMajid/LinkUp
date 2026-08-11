@@ -9,7 +9,11 @@ import '../../features/auth/screens/register_screen.dart';
 import '../../features/auth/screens/forgot_password_screen.dart';
 import '../../features/auth/screens/reset_password_screen.dart';
 import '../../features/home/presentation/screens/home_screen.dart';
-import '../../features/chats/presentation/screens/chats_screen.dart';
+import '../../features/chat/presentation/screens/chats_list_screen.dart';
+import '../../features/chat/presentation/screens/new_chat_screen.dart';
+import '../../features/chat/presentation/screens/user_profile_preview_screen.dart';
+import '../../features/chat/presentation/screens/chat_screen.dart';
+import '../../features/chat/presentation/screens/archived_chats_screen.dart';
 import '../../features/groups/presentation/screens/groups_screen.dart';
 import '../../features/hub/presentation/screens/hub_screen.dart';
 import '../../features/profile/presentation/screens/profile_screen.dart';
@@ -26,6 +30,10 @@ class AppRouter {
   static const String resetPassword = '/reset-password';
   static const String home = '/home';
   static const String chats = '/chats';
+  static const String newChat = '/new-chat';
+  static const String userProfile = '/user/:userId';
+  static const String chatRoom = '/chat/:conversationId';
+  static const String archivedChats = '/archived-chats';
   static const String groups = '/groups';
   static const String hub = '/hub';
   static const String profile = '/profile';
@@ -80,6 +88,31 @@ class AppRouter {
         path: resetPassword,
         builder: (context, state) => const ResetPasswordScreen(),
       ),
+      
+      // Standalone authenticated routes
+      GoRoute(
+        path: newChat,
+        builder: (context, state) => const NewChatScreen(),
+      ),
+      GoRoute(
+        path: userProfile,
+        builder: (context, state) {
+          final userId = state.pathParameters['userId']!;
+          return UserProfilePreviewScreen(userId: userId);
+        },
+      ),
+      GoRoute(
+        path: archivedChats,
+        builder: (context, state) => const ArchivedChatsScreen(),
+      ),
+      GoRoute(
+        path: chatRoom,
+        builder: (context, state) {
+          final conversationId = state.pathParameters['conversationId']!;
+          return ChatScreen(conversationId: conversationId);
+        },
+      ),
+
       // Authenticated Shell
       StatefulShellRoute.indexedStack(
         builder: (context, state, navigationShell) {
@@ -98,7 +131,7 @@ class AppRouter {
             routes: [
               GoRoute(
                 path: chats,
-                builder: (context, state) => const ChatsScreen(),
+                builder: (context, state) => const ChatsListScreen(),
               ),
             ],
           ),

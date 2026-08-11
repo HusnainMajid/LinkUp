@@ -1,11 +1,16 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
-import '../../../../core/constants/app_sizes.dart';
+import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' as sb;
 import '../../../../core/theme/app_colors.dart';
 import '../../../../shared/widgets/app_card.dart';
 import '../../../../shared/widgets/app_avatar.dart';
 import '../../../../shared/widgets/app_button.dart';
 import '../../../profile/data/profile_repository.dart';
 import '../../../auth/models/profile_model.dart';
+import '../../../chat/data/models/conversation_model.dart';
+import '../../../chat/data/repositories/chat_repository.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -16,9 +21,12 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateMixin {
   final _profileRepository = ProfileRepository();
+  final _chatRepository = ChatRepository();
   Profile? _profile;
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
+  Stream<List<Conversation>>? _recentConversationsStream;
+  StreamSubscription? _triggerSubscription;
 
   @override
   void initState() {
@@ -32,10 +40,21 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       curve: Curves.easeIn,
     );
     _loadProfile();
+    _recentConversationsStream = _chatRepository.subscribeToConversations();
+    
+    // Global trigger for real-time updates
+    _triggerSubscription = _chatRepository.globalChatUpdateTrigger.listen((_) {
+      if (mounted) {
+        setState(() {
+          _recentConversationsStream = _chatRepository.subscribeToConversations();
+        });
+      }
+    });
   }
 
   @override
   void dispose() {
+    _triggerSubscription?.cancel();
     _animationController.dispose();
     super.dispose();
   }
@@ -78,7 +97,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                 const SizedBox(height: 32),
                 _buildQuickActions(),
                 const SizedBox(height: 32),
-                _buildRecentConversations(),
+                _buildRecentConversationsSection(),
                 const SizedBox(height: 32),
                 _buildHubPreview(),
                 const SizedBox(height: 32),
@@ -206,22 +225,38 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            _buildActionItem(Icons.chat_bubble_outline_rounded, 'New Chat'),
-            _buildActionItem(Icons.group_add_outlined, 'New Group'),
-            _buildActionItem(Icons.task_alt_rounded, 'Task'),
-            _buildActionItem(Icons.event_note_rounded, 'Event'),
+            _buildActionItem(
+              Icons.chat_bubble_outline_rounded, 
+              'New Chat', 
+              onTap: () => context.push('/new-chat'),
+            ),
+            _buildActionItem(
+              Icons.group_add_outlined, 
+              'New Group',
+              onTap: () => context.go('/groups'),
+            ),
+            _buildActionItem(
+              Icons.task_alt_rounded, 
+              'Task',
+              onTap: () => context.go('/hub'),
+            ),
+            _buildActionItem(
+              Icons.event_note_rounded, 
+              'Event',
+              onTap: () => context.go('/hub'),
+            ),
           ],
         ),
       ],
     );
   }
 
-  Widget _buildActionItem(IconData icon, String label) {
+  Widget _buildActionItem(IconData icon, String label, {VoidCallback? onTap}) {
     return Column(
       children: [
         AppCard(
           padding: const EdgeInsets.all(16),
-          onTap: () {},
+          onTap: onTap,
           child: Icon(
             icon, 
             color: AppColors.primary, 
@@ -242,10 +277,7 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     );
   }
 
-  Widget _buildRecentConversations() {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-
+  Widget _buildRecentConversationsSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -254,59 +286,184 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
           children: [
             Text(
               'Recent Conversations',
-              style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
             ),
             TextButton(
-              onPressed: () {},
+              onPressed: () => context.go('/chats'),
               child: const Text('See all'),
             ),
           ],
         ),
         const SizedBox(height: 8),
-        AppCard(
-          padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 24),
-          child: Column(
+        StreamBuilder<List<Conversation>>(
+          stream: _recentConversationsStream,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
+              return const Center(child: CircularProgressIndicator());
+            }
+
+            final allConversations = snapshot.data ?? [];
+            final conversations = allConversations
+                .where((c) => !(c.preferences?.isDeleted ?? false) && !(c.preferences?.isArchived ?? false))
+                .take(3)
+                .toList();
+
+            if (conversations.isEmpty) {
+              return _buildEmptyState();
+            }
+
+            return Column(
+              children: conversations.map((conv) => _buildConversationItem(conv)).toList(),
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildConversationItem(Conversation conversation) {
+    final otherUser = _chatRepository.getOtherParticipant(conversation);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final prefs = conversation.preferences;
+    final isUnread = prefs?.lastReadAt == null || 
+        (conversation.latestMessage != null && 
+         conversation.latestMessage!.createdAt.isAfter(prefs!.lastReadAt!));
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: AppCard(
+        padding: EdgeInsets.zero,
+        onTap: () => context.push('/chat/${conversation.id}'),
+        child: ListTile(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          leading: AppAvatar(
+            imageUrl: otherUser?.avatarUrl,
+            initials: otherUser?.fullName ?? 'U',
+            size: 48,
+            showOnlineIndicator: true,
+          ),
+          title: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: isDark ? AppColors.backgroundDark : Colors.grey.shade50,
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  Icons.forum_outlined, 
-                  size: 32, 
-                  color: isDark ? AppColors.textTertiaryDark : Colors.grey
+              Expanded(
+                child: Text(
+                  otherUser?.fullName ?? 'User',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontWeight: isUnread ? FontWeight.bold : FontWeight.w600,
+                  ),
                 ),
               ),
-              const SizedBox(height: 20),
-              Text(
-                'No conversations yet',
-                style: theme.textTheme.titleSmall,
+              if (conversation.latestMessage != null)
+                Text(
+                  _formatTime(conversation.latestMessage!.createdAt),
+                  style: TextStyle(
+                    color: isUnread ? AppColors.primary : Colors.grey,
+                    fontSize: 11,
+                    fontWeight: isUnread ? FontWeight.bold : FontWeight.normal,
+                  ),
+                ),
+            ],
+          ),
+          subtitle: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  _getMessagePreview(conversation),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: isUnread ? (isDark ? Colors.white : Colors.black87) : Colors.grey,
+                    fontSize: 13,
+                  ),
+                ),
               ),
-              const SizedBox(height: 8),
-              Text(
-                'Start a conversation and connect with someone.',
-                textAlign: TextAlign.center,
-                style: theme.textTheme.bodySmall,
-              ),
-              const SizedBox(height: 24),
-              AppButton(
-                text: '+ Start New Chat',
-                width: 180,
-                type: AppButtonType.gradient,
-                onPressed: () {},
-              ),
+              if (isUnread)
+                Container(
+                  margin: const EdgeInsets.only(left: 8),
+                  width: 8,
+                  height: 8,
+                  decoration: const BoxDecoration(
+                    color: AppColors.primary,
+                    shape: BoxShape.circle,
+                  ),
+                ),
             ],
           ),
         ),
-      ],
+      ),
+    );
+  }
+
+  String _formatTime(DateTime date) {
+    final localDate = date.toLocal();
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final messageDate = DateTime(localDate.year, localDate.month, localDate.day);
+
+    if (messageDate == today) {
+      return DateFormat('h:mm a').format(localDate);
+    } else {
+      return DateFormat('MMM d').format(localDate);
+    }
+  }
+
+  String _getMessagePreview(Conversation conversation) {
+    if (conversation.latestMessage == null) return 'No messages yet';
+    final msg = conversation.latestMessage!;
+    if (msg.deletedAt != null) return 'This message was deleted';
+    
+    final prefix = msg.senderId == sb.Supabase.instance.client.auth.currentUser?.id ? 'You: ' : '';
+    return '$prefix${msg.content}';
+  }
+
+  Widget _buildEmptyState() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return AppCard(
+      padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 24),
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: isDark ? AppColors.backgroundDark : Colors.grey.shade50,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              Icons.forum_outlined, 
+              size: 32, 
+              color: isDark ? AppColors.textTertiaryDark : Colors.grey
+            ),
+          ),
+          const SizedBox(height: 20),
+          const Text(
+            'No conversations yet',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Start a conversation and connect with someone.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.grey, fontSize: 13),
+          ),
+          const SizedBox(height: 24),
+          AppButton(
+            text: '+ Start New Chat',
+            width: 180,
+            type: AppButtonType.gradient,
+            onPressed: () => context.push('/new-chat'),
+          ),
+        ],
+      ),
     );
   }
 
   Widget _buildHubPreview() {
     return AppCard(
       padding: const EdgeInsets.all(24),
+      onTap: () => context.go('/hub'),
       useGradient: true,
       gradient: LinearGradient(
         colors: [
@@ -360,11 +517,11 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
         Row(
           children: [
             Icon(icon, size: 18, color: AppColors.primary),
-            Gap.w8,
+            const SizedBox(width: 8),
             Text(count, style: const TextStyle(fontWeight: FontWeight.bold)),
           ],
         ),
-        Gap.h4,
+        const SizedBox(height: 4),
         Text(label, style: Theme.of(context).textTheme.bodySmall),
       ],
     );
