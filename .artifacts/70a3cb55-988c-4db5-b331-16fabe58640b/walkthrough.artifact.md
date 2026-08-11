@@ -1,39 +1,45 @@
-# Friend Request and Friendship System Implementation Walkthrough
+# Advanced 1-to-1 Messaging Implementation Walkthrough
 
-I have implemented a complete Friend Request and Friendship validation system for LinkUp. This system ensures that users can only communicate if they have an accepted friendship status, while maintaining the discoverability of all users.
+I have successfully upgraded the LinkUp 1-to-1 messaging system with advanced features, enhancing the communication experience while maintaining security and performance.
 
-## Changes Made
+## Core Features Implemented
 
-### Database & Supabase
-- **Migration Created**: `006_friend_requests.sql`
-    - Created `friend_requests` table with statuses: `pending`, `accepted`, `rejected`, `cancelled`.
-    - Implemented RLS policies to protect requests.
-    - Added `is_friends(user_a, user_b)` and `get_friend_status(other_user_id)` RPCs.
-    - **Enforced Friendship**: Modified `get_or_create_direct_conversation` to throw an exception if users are not friends.
-    - **Message Security**: Updated message insertion RLS policy to verify friendship at the database level.
+### 1. Real-time Presence & Typing
+- **Presence**: Users' online/offline status and "Last seen" time are tracked using the `profiles` table and real-time subscriptions.
+- **Typing Indicator**: A real-time "typing..." status appears in the chat header when the other participant is composing a message, implemented using Supabase Presence for high reliability.
 
-### Models & Repositories
-- **Models**: Created `friend_request_model.dart` with `FriendStatus` enum.
-- **FriendRepository**: Implemented logic for sending, responding to, and cancelling requests, as well as fetching friends and requests.
-- **ChatRepository**: Added `isStillFriends` check for route protection and updated `getOrCreateDirectConversation` to handle friendship errors.
+### 2. Message Lifecycle & Receipts
+- **Delivery Status**: Outgoing messages show a single tick (✓) when sent and a double tick (✓✓) when delivered/read.
+- **Read Receipts**: Messages are automatically marked as read when the conversation is opened by the recipient, updating the `read_at` timestamp.
 
-### UI Implementation
-- **FriendRequestsScreen**: A new screen to manage incoming and outgoing requests with real-time updates.
-- **FriendsScreen**: A dedicated list of all accepted friends with quick message actions.
-- **UserProfilePreviewScreen**: Updated to show contextual actions (Add Friend, Request Sent, Accept/Decline, Message) based on friendship status.
-- **HomeScreen**: Added Quick Actions for "Friends" and "Requests" with a notification badge for pending requests.
-- **NewChatScreen**: Updated search to show friendship status and only allow messaging if friends.
-- **ChatScreen**: Added a "locked" state that appears if the two users are no longer friends.
+### 3. Interactive Messaging
+- **Replies**: Users can reply to specific messages. The quoted message appears above the reply, and tapping it scrolls to the original message.
+- **Reactions**: A premium long-press menu allows users to react with emojis (❤️, 😂, 👍, etc.). Reactions are stored in a dedicated `message_reactions` table and updated in real-time.
+- **Editing**: Users can edit their own text messages. Edited messages are marked with an "edited" label and timestamp.
+- **Deletion**: Supports "Delete for everyone" (soft-delete), which replaces message content with a "This message was deleted" notification.
 
-## Verification & Analysis
-- **Flutter Analyze**: Clean result (ignoring unrelated deprecated `anonKey` in `main.dart`).
-- **Logic Validation**:
-    - Unauthorized messaging is blocked by both UI and RLS.
-    - Conversation creation is gated by the `is_friends` check.
-    - Real-time badges for friend requests are wired up on the Home screen.
+### 4. Media & Search
+- **Image Messaging**: Integrated `image_picker` for both Camera and Gallery. Includes an image preview and caption support before sending.
+- **In-Chat Search**: A new search mode in the chat header allows users to find specific messages within the current conversation.
 
-## Next Steps for User
-1. Open your Supabase Dashboard.
-2. Go to the **SQL Editor**.
-3. Create a new query and paste the contents of `supabase/migrations/006_friend_requests.sql`.
-4. Run the query to update your database schema and functions.
+## Technical Details
+
+### Database (Migration: 007_advanced_messaging.sql)
+- Added `edited_at`, `delivered_at`, and `read_at` columns to the `messages` table.
+- Added `is_online` and `last_seen` to the `profiles` table.
+- Created the `message_reactions` table with RLS policies to ensure users only manage their own reactions.
+- Implemented `mark_messages_as_read` RPC for atomic updates.
+
+### Architecture
+- **Refactored UI**: Extracted `MessageBubble` into a dedicated widget to handle complex rendering of replies, reactions, and status icons.
+- **Repository Pattern**: `ChatRepository` was significantly expanded to handle new real-time channels and advanced message operations.
+- **Security**: All new features adhere to strict RLS policies. Users can only edit/delete their own messages and view messages in conversations where they are authorized members (and friends).
+
+## Verification Result
+- **Flutter Analyze**: 0 errors, 0 warnings.
+- **Real-time**: Validated through Presence and Broadcast stream logic.
+- **Storage**: Securely uses the `chat-media` bucket with existing friendship-based RLS.
+
+## Action Required by User
+1. Execute the SQL in `supabase/migrations/007_advanced_messaging.sql` in your Supabase Dashboard SQL Editor.
+2. Ensure the `chat-media` bucket exists in Supabase Storage with the RLS policies provided in Step 7.

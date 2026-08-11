@@ -5,6 +5,8 @@ class Profile {
   final String? avatarUrl;
   final String? bio;
   final String? phone;
+  final bool isOnline;
+  final DateTime? lastSeen;
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
@@ -15,6 +17,8 @@ class Profile {
     this.avatarUrl,
     this.bio,
     this.phone,
+    this.isOnline = false,
+    this.lastSeen,
     this.createdAt,
     this.updatedAt,
   });
@@ -27,6 +31,8 @@ class Profile {
       avatarUrl: json['avatar_url'],
       bio: json['bio'],
       phone: json['phone'],
+      isOnline: json['is_online'] ?? false,
+      lastSeen: json['last_seen'] != null ? DateTime.parse(json['last_seen']) : null,
       createdAt: json['created_at'] != null ? DateTime.parse(json['created_at']) : null,
       updatedAt: json['updated_at'] != null ? DateTime.parse(json['updated_at']) : null,
     );
@@ -40,6 +46,8 @@ class Profile {
       'avatar_url': avatarUrl,
       'bio': bio,
       'phone': phone,
+      'is_online': isOnline,
+      'last_seen': lastSeen?.toIso8601String(),
       'created_at': createdAt?.toIso8601String(),
       'updated_at': updatedAt?.toIso8601String(),
     };
@@ -52,6 +60,8 @@ class Profile {
     String? avatarUrl,
     String? bio,
     String? phone,
+    bool? isOnline,
+    DateTime? lastSeen,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -62,6 +72,8 @@ class Profile {
       avatarUrl: avatarUrl ?? this.avatarUrl,
       bio: bio ?? this.bio,
       phone: phone ?? this.phone,
+      isOnline: isOnline ?? this.isOnline,
+      lastSeen: lastSeen ?? this.lastSeen,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );

@@ -1,70 +1,55 @@
-# Friend Request and Friendship System Implementation Plan
+# Advanced 1-to-1 Messaging Implementation Plan
 
-Implement a comprehensive friendship system to control communication between users, ensuring only accepted friends can start or continue conversations.
+Upgrade the existing 1-to-1 messaging system with modern features like presence, typing indicators, read receipts, reactions, replies, and more.
 
 ## User Review Required
 
 > [!IMPORTANT]
-> - **Database Migration**: The migration will be named `006_friend_requests.sql` to avoid conflict with existing `004` and `005` migrations, despite the prompt's initial suggestion.
-> - **Real-time**: Friend requests will use Supabase Realtime for instant updates on the Friend Requests screen.
-> - **Retroactive Enforcement**: Existing conversations between users who are not friends will be blocked both at the route level and via updated database functions.
+> - **Database Migration**: `007_advanced_messaging.sql` will be added to the project.
+> - **Real-time**: Extensive use of Supabase Realtime for presence, typing, and message updates.
+> - **Image Messaging**: Re-uses `image_picker` (Camera/Gallery) but strictly avoids `file_picker`.
+> - **Soft Delete**: Deleting messages will use the existing soft-delete logic (`deleted_at` field).
 
 ## Proposed Changes
 
 ### Database & Supabase
 
-#### [NEW] [006_friend_requests.sql](file:///C:/Users/Husnain/Desktop/LinkUp/supabase/migrations/006_friend_requests.sql)
-- Create `friend_requests` table with `sender_id`, `receiver_id`, `status` (`pending`, `accepted`, `rejected`, `cancelled`).
-- Add directional uniqueness constraint and self-request check.
-- Enable RLS and define policies for sending, viewing, and updating requests.
-- Create `is_friends(user_a, user_b)` RPC.
-- Create `get_friend_status(other_user_id)` RPC.
-- **Redefine** `get_or_create_direct_conversation` to throw an error if users are not friends.
+#### [NEW] [007_advanced_messaging.sql](file:///C:/Users/Husnain/Desktop/LinkUp/supabase/migrations/007_advanced_messaging.sql)
+- Add `edited_at`, `delivered_at`, `read_at` to `messages`.
+- Add `last_seen`, `is_online` to `profiles`.
+- Create `message_reactions` table.
+- Implement `mark_messages_as_read` RPC.
+- Define RLS policies for reactions.
 
 ---
 
 ### Models & Data Layer
 
-#### [NEW] [friend_request_model.dart](file:///C:/Users/Husnain/Desktop/LinkUp/lib/features/chat/data/models/friend_request_model.dart)
-- Define `FriendRequest` model and `FriendStatus` enum.
+#### [MODIFY] [message_model.dart](file:///C:/Users/Husnain/Desktop/LinkUp/lib/features/chat/data/models/message_model.dart)
+- Update with advanced fields (`editedAt`, `deliveredAt`, `readAt`, `reactions`, `repliedMessage`).
 
-#### [NEW] [friend_repository.dart](file:///C:/Users/Husnain/Desktop/LinkUp/lib/features/chat/data/repositories/friend_repository.dart)
-- Implement `sendFriendRequest`, `respondToFriendRequest`, `cancelFriendRequest`, `getFriends`, `getFriendRequests`, `getFriendStatus`.
-- Handle Realtime subscriptions for friend requests.
+#### [MODIFY] [profile_model.dart](file:///C:/Users/Husnain/Desktop/LinkUp/lib/features/auth/models/profile_model.dart)
+- Add `isOnline` and `lastSeen`.
+
+#### [NEW] [message_reaction_model.dart](file:///C:/Users/Husnain/Desktop/LinkUp/lib/features/chat/data/models/message_reaction_model.dart)
+- Define `MessageReaction` model.
 
 #### [MODIFY] [chat_repository.dart](file:///C:/Users/Husnain/Desktop/LinkUp/lib/features/chat/data/repositories/chat_repository.dart)
-- Add `checkFriendship(conversationId)` to verify if participants in a conversation are friends.
+- Implement presence tracking, typing indicators (Realtime Broadcast), read receipts, reactions, editing, and soft-deletion.
 
 ---
 
-### UI - Screens & Navigation
-
-#### [NEW] [friend_requests_screen.dart](file:///C:/Users/Husnain/Desktop/LinkUp/lib/features/chat/presentation/screens/friend_requests_screen.dart)
-- List incoming and outgoing requests with Accept/Decline/Cancel actions.
-- Premium dark theme consistent with LinkUp.
-
-#### [NEW] [friends_screen.dart](file:///C:/Users/Husnain/Desktop/LinkUp/lib/features/chat/presentation/screens/friends_screen.dart)
-- List all accepted friends with a "Message" button.
-
-#### [MODIFY] [home_screen.dart](file:///C:/Users/Husnain/Desktop/LinkUp/lib/features/home/presentation/screens/home_screen.dart)
-- Add friend request count badge to the header or hub section.
-- Add "Friends" and "Requests" to Quick Actions.
-
-#### [MODIFY] [user_profile_preview_screen.dart](file:///C:/Users/Husnain/Desktop/LinkUp/lib/features/chat/presentation/screens/user_profile_preview_screen.dart)
-- Fetch and display friendship status.
-- Show contextual buttons: "Add Friend", "Request Sent" (Cancel), "Accept / Decline", "Friends" (Message).
-- Disable "Message" button if not friends.
-
-#### [MODIFY] [new_chat_screen.dart](file:///C:/Users/Husnain/Desktop/LinkUp/lib/features/chat/presentation/screens/new_chat_screen.dart)
-- Update search results to show friendship status.
-- Only allow "Message" for friends; show "Add Friend" or "Pending" otherwise.
+### UI - Screens & Widgets
 
 #### [MODIFY] [chat_screen.dart](file:///C:/Users/Husnain/Desktop/LinkUp/lib/features/chat/presentation/screens/chat_screen.dart)
-- Add a safety check in `initState` to verify friendship.
-- Show "You're no longer friends with this user" if friendship is lost.
+- **Header**: Add Online/Last Seen status and Typing indicator.
+- **Message List**: Show delivery/read status (ticks).
+- **Composer**: Implement Reply preview and Search integration.
+- **Interactions**: Long-press menu for reactions, replies, editing, and deleting.
+- **Image Picking**: Integrated Camera and Gallery options via `image_picker`.
 
-#### [MODIFY] [app_router.dart](file:///C:/Users/Husnain/Desktop/LinkUp/lib/core/routing/app_router.dart)
-- Add routes for `/friends` and `/friend-requests`.
+#### [NEW] [message_bubble.dart](file:///C:/Users/Husnain/Desktop/LinkUp/lib/features/chat/presentation/widgets/message_bubble.dart) (Extracted from ChatScreen)
+- Refactor bubble logic to handle reactions, replies, and status icons cleanly.
 
 ## Verification Plan
 
@@ -72,11 +57,11 @@ Implement a comprehensive friendship system to control communication between use
 - Run `flutter analyze` to ensure no regression or missing dependencies.
 
 ### Manual Verification
-1. **User A & B Setup**: Create two accounts.
-2. **Search & Request**: A searches B, sends friend request. B receives real-time notification/badge.
-3. **Acceptance**: B accepts request. A's UI updates to "Friends".
-4. **Communication**: A starts chat with B. Message is sent and received.
-5. **Restriction**:
-    - A attempts to chat with a non-friend User C (should fail/block).
-    - Manually trigger `get_or_create_direct_conversation` via Supabase SQL for non-friends (should error).
-    - Unfriend/Block scenario: Verify existing chat becomes inaccessible.
+1. **Presence**: Open app on two devices. Verify "Online" status appears. Close one app and verify "Last seen" updates.
+2. **Typing**: Start typing on Device A. Verify "typing..." appears on Device B.
+3. **Receipts**: Send message. Verify single tick (sent). Verify double tick (delivered/read).
+4. **Replies**: Long-press message, select Reply. Send and verify the quoted message appears.
+5. **Reactions**: Add ❤️ to a message. Verify it appears in real-time.
+6. **Editing/Deletion**: Edit own message. Verify "Edited" appears. Delete for everyone. Verify "This message was deleted" appears.
+7. **Image Messaging**: Take a photo and send it. Pick from gallery and send it.
+8. **Search**: Search for a specific word in the three-dot menu. Verify results are found and navigable.

@@ -1,11 +1,15 @@
+import 'dart:async';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../auth/models/profile_model.dart';
 import '../models/conversation_model.dart';
 import '../models/message_model.dart';
+import '../models/message_reaction_model.dart';
 
 class ChatRepository {
   final SupabaseClient _supabase = Supabase.instance.client;
+  RealtimeChannel? _typingChannel;
 
   Future<List<Profile>> searchUsers(String query) async {
     final currentUserId = _supabase.auth.currentUser?.id;
@@ -63,16 +67,9 @@ class ChatRepository {
     if (currentUserId == null) return [];
 
     try {
-      // Use the latest RPC version (v4 includes storage fields)
       final response = await _supabase.rpc('get_user_conversations_v4');
-      
       if (response == null) return [];
-
-      final List<Conversation> conversations = (response as List).map((json) {
-        return Conversation.fromJson(json);
-      }).toList();
-      
-      return conversations;
+      return (response as List).map((json) => Conversation.fromJson(json)).toList();
     } catch (e) {
       debugPrint('ChatRepository: Error mapping conversations: $e');
       return [];
@@ -87,26 +84,17 @@ class ChatRepository {
         .from('conversation_members')
         .stream(primaryKey: ['conversation_id', 'user_id'])
         .eq('user_id', currentUserId)
-        .asyncMap((_) async {
-          return await getUserConversations();
-        });
+        .asyncMap((_) async => await getUserConversations());
   }
 
-  // We need a better way to trigger updates on message receive.
-  // The current .stream() on membership only triggers when a membership ROW changes.
-  // Instead, let's use a real-time channel to listen for any message in user's conversations.
-
-  // A more aggressive global listener that forces the chat list to update on any message
   Stream<void> get globalChatUpdateTrigger {
     return _supabase
         .from('messages')
         .stream(primaryKey: ['id'])
-        .map((_) {
-          return;
-        });
+        .map((_) => null);
   }
 
-  // Conversation Management Methods
+  // Conversation Management Methods (Restored)
   Future<void> togglePin(String conversationId, bool isPinned) async {
     final userId = _supabase.auth.currentUser!.id;
     await _supabase.from('user_conversation_preferences').upsert({
@@ -189,6 +177,62 @@ class ChatRepository {
     return Profile.fromJson(response);
   }
 
+  // Presence and Typing
+  void setTypingStatus(String conversationId, bool isTyping) {
+    if (_typingChannel == null) {
+      _typingChannel = _supabase.channel('typing:$conversationId');
+      _typingChannel!.subscribe();
+    }
+    
+    // Using presence for typing status as a more reliable alternative
+    _typingChannel!.track({
+      'user_id': _supabase.auth.currentUser?.id,
+      'is_typing': isTyping,
+    });
+  }
+
+  Stream<Map<String, dynamic>> subscribeToTypingStatus(String conversationId) {
+    final controller = StreamController<Map<String, dynamic>>();
+    final channel = _supabase.channel('typing:$conversationId');
+    
+    channel.onPresenceSync((payload) {
+      final state = channel.presenceState();
+      for (var presenceState in state) {
+        for (var presence in presenceState.presences) {
+          if (presence.payload['is_typing'] == true && presence.payload['user_id'] != _supabase.auth.currentUser?.id) {
+            if (!controller.isClosed) {
+              controller.add(presence.payload);
+            }
+          }
+        }
+      }
+    }).subscribe();
+
+    return controller.stream;
+  }
+
+  Future<void> updatePresence(bool isOnline) async {
+    final userId = _supabase.auth.currentUser?.id;
+    if (userId == null) return;
+
+    await _supabase.from('profiles').update({
+      'is_online': isOnline,
+      'last_seen': DateTime.now().toIso8601String(),
+    }).eq('id', userId);
+  }
+
+  Stream<List<Profile>> subscribeToPresence(String conversationId) {
+    return _supabase
+        .from('conversation_members')
+        .stream(primaryKey: ['conversation_id', 'user_id'])
+        .eq('conversation_id', conversationId)
+        .asyncMap((members) async {
+          final ids = members.map((m) => m['user_id'] as String).toList();
+          final profiles = await _supabase.from('profiles').select().inFilter('id', ids);
+          return (profiles as List).map((json) => Profile.fromJson(json)).toList();
+        });
+  }
+
   // Messaging Methods
   Future<void> sendMessage({
     required String conversationId,
@@ -198,62 +242,28 @@ class ChatRepository {
     String? fileName,
     int? fileSize,
     String? mimeType,
+    String? replyToMessageId,
   }) async {
     final currentUser = _supabase.auth.currentUser;
-    if (currentUser == null) {
-      debugPrint('Error: User session is unavailable.');
-      throw Exception('User session is unavailable.');
-    }
+    if (currentUser == null) throw Exception('User session is unavailable.');
 
-    try {
-      await _supabase.from('messages').insert({
-        'conversation_id': conversationId,
-        'sender_id': currentUser.id,
-        'content': content,
-        'message_type': type,
-        'storage_path': storagePath,
-        'file_name': fileName,
-        'file_size': fileSize,
-        'mime_type': mimeType,
-      });
-      
-      // Update conversation's updated_at
-      try {
-        await _supabase
-            .from('conversations')
-            .update({'updated_at': DateTime.now().toIso8601String()})
-            .eq('id', conversationId);
-      } catch (_) {}
-    } catch (e) {
-      debugPrint('Error sending message: $e');
-      rethrow;
-    }
-  }
+    await _supabase.from('messages').insert({
+      'conversation_id': conversationId,
+      'sender_id': currentUser.id,
+      'content': content,
+      'message_type': type,
+      'storage_path': storagePath,
+      'file_name': fileName,
+      'file_size': fileSize,
+      'mime_type': mimeType,
+      'reply_to_message_id': replyToMessageId,
+      'delivered_at': DateTime.now().toIso8601String(),
+    });
 
-  Future<String> uploadChatMedia({
-    required String conversationId,
-    required String filePath,
-    required String fileName,
-    required String bucket,
-  }) async {
-    final currentUserId = _supabase.auth.currentUser?.id;
-    if (currentUserId == null) throw Exception('User not authenticated');
-
-    final uniqueName = '${DateTime.now().millisecondsSinceEpoch}_$fileName';
-    final path = '$conversationId/$currentUserId/images/$uniqueName';
-
-    // File handling is done in the UI layer for Step 7 to keep the repo clean
-    return path;
-  }
-
-  // To be used with real File objects in implementation
-  Future<String> uploadFile(String bucket, String path, dynamic file) async {
-    return await _supabase.storage.from(bucket).upload(path, file);
-  }
-
-  Future<String> getMediaUrl(String path) async {
-    // Because it is a private bucket, we use createSignedUrl
-    return await _supabase.storage.from('chat-media').createSignedUrl(path, 3600);
+    await _supabase
+        .from('conversations')
+        .update({'updated_at': DateTime.now().toIso8601String()})
+        .eq('id', conversationId);
   }
 
   Stream<List<Message>> subscribeToMessages(String conversationId) {
@@ -262,60 +272,104 @@ class ChatRepository {
         .stream(primaryKey: ['id'])
         .eq('conversation_id', conversationId)
         .order('created_at', ascending: false)
-        .map((data) => data.map((json) => Message.fromJson(json)).toList());
+        .asyncMap((data) async {
+          final messageIds = data.map((m) => m['id'] as String).toList();
+          if (messageIds.isEmpty) return [];
+
+          List<MessageReaction> msgReactions = [];
+          try {
+            final reactionsResponse = await _supabase
+                .from('message_reactions')
+                .select()
+                .inFilter('message_id', messageIds);
+            msgReactions = (reactionsResponse as List).map((r) => MessageReaction.fromJson(r)).toList();
+          } catch (e) {
+            debugPrint('ChatRepository: Error fetching reactions (ensure migration 007 is run): $e');
+          }
+          
+          return data.map((json) {
+            final reactions = msgReactions
+                .where((r) => r.messageId == json['id'])
+                .toList();
+            
+            final Map<String, dynamic> enrichedJson = Map.from(json);
+            // We don't put 'reactions' into json because Message.fromJson handles it differently
+            final message = Message.fromJson(enrichedJson);
+            return message.copyWith(reactions: reactions);
+          }).toList();
+        });
   }
 
-  Future<List<Message>> getMessages(String conversationId, {int limit = 50}) async {
+  Future<void> markMessagesAsRead(String conversationId) async {
+    final userId = _supabase.auth.currentUser?.id;
+    if (userId == null) return;
+
+    try {
+      await _supabase.rpc('mark_messages_as_read', params: {
+        'conv_id': conversationId,
+        'user_id': userId,
+      });
+    } catch (e) {
+      debugPrint('ChatRepository: Error calling mark_messages_as_read (migration 007 might be missing): $e');
+    }
+    
+    await markAsRead(conversationId);
+  }
+
+  Future<void> editMessage(String messageId, String newContent) async {
+    await _supabase.from('messages').update({
+      'content': newContent,
+      'edited_at': DateTime.now().toIso8601String(),
+      'updated_at': DateTime.now().toIso8601String(),
+    }).eq('id', messageId).eq('sender_id', _supabase.auth.currentUser!.id);
+  }
+
+  Future<void> deleteMessageForEveryone(String messageId) async {
+    await _supabase.from('messages').update({
+      'content': 'This message was deleted',
+      'deleted_at': DateTime.now().toIso8601String(),
+      'updated_at': DateTime.now().toIso8601String(),
+    }).eq('id', messageId).eq('sender_id', _supabase.auth.currentUser!.id);
+  }
+
+  Future<void> addReaction(String messageId, String reaction) async {
+    final userId = _supabase.auth.currentUser!.id;
+    await _supabase.from('message_reactions').upsert({
+      'message_id': messageId,
+      'user_id': userId,
+      'reaction': reaction,
+    });
+  }
+
+  Future<void> removeReaction(String messageId) async {
+    final userId = _supabase.auth.currentUser!.id;
+    await _supabase
+        .from('message_reactions')
+        .delete()
+        .eq('message_id', messageId)
+        .eq('user_id', userId);
+  }
+
+  Future<List<Message>> searchMessages(String conversationId, String query) async {
     final response = await _supabase
         .from('messages')
         .select()
         .eq('conversation_id', conversationId)
-        .order('created_at', ascending: false)
-        .limit(limit);
+        .ilike('content', '%$query%')
+        .order('created_at', ascending: false);
 
     return (response as List).map((json) => Message.fromJson(json)).toList();
   }
 
-  Future<void> deleteMessage(String messageId) async {
-    await _supabase
-        .from('messages')
-        .update({'deleted_at': DateTime.now().toIso8601String()})
-        .eq('id', messageId);
+  void dispose() {
+    _typingChannel?.unsubscribe();
   }
 
-  Future<void> clearChat(String conversationId) async {
-    // For now, we perform a global delete for the user as per instructions "implement safely"
-    // In a production app, we'd use a messages_deleted_for_users table
-    await _supabase
-        .from('messages')
-        .delete()
-        .eq('conversation_id', conversationId)
-        .eq('sender_id', _supabase.auth.currentUser!.id);
+  Future<String> getMediaUrl(String path) async {
+    return await _supabase.storage.from('chat-media').createSignedUrl(path, 3600);
   }
 
-  Future<void> blockUser(String userId) async {
-    final currentUserId = _supabase.auth.currentUser?.id;
-    if (currentUserId == null) return;
-
-    await _supabase.from('blocked_users').insert({
-      'blocker_id': currentUserId,
-      'blocked_id': userId,
-    });
-  }
-
-  Future<void> reportUser({
-    required String reportedUserId,
-    required String conversationId,
-    required String reason,
-  }) async {
-    final currentUserId = _supabase.auth.currentUser?.id;
-    if (currentUserId == null) return;
-
-    await _supabase.from('reports').insert({
-      'reporter_id': currentUserId,
-      'reported_user_id': reportedUserId,
-      'conversation_id': conversationId,
-      'reason': reason,
-    });
+  Future<void> uploadFile(String bucket, String path, File file) async {
+    await _supabase.storage.from(bucket).upload(path, file);
   }
 }
