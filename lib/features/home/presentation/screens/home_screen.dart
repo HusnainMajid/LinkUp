@@ -415,7 +415,12 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     if (msg.deletedAt != null) return 'This message was deleted';
     
     final prefix = msg.senderId == sb.Supabase.instance.client.auth.currentUser?.id ? 'You: ' : '';
-    return '$prefix${msg.content}';
+    
+    switch (msg.messageType) {
+      case 'image': return '$prefix📷 Photo';
+      case 'file': return '$prefix📎 ${msg.fileName ?? 'File'}';
+      default: return '$prefix${msg.content}';
+    }
   }
 
   Widget _buildEmptyState() {

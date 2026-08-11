@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "com.example.link_up"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = rootProject.extra.get("compileSdkVersion") as Int
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
@@ -19,8 +19,8 @@ android {
         applicationId = "com.example.link_up"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
+        minSdk = rootProject.extra.get("minSdkVersion") as Int
+        targetSdk = rootProject.extra.get("targetSdkVersion") as Int
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }

@@ -339,8 +339,7 @@ class _ChatsListScreenState extends State<ChatsListScreen> {
     
     switch (msg.messageType) {
       case 'image': return '$prefix📷 Photo';
-      case 'video': return '$prefix🎥 Video';
-      case 'file': return '$prefix📎 File';
+      case 'file': return '$prefix📎 ${msg.fileName ?? 'File'}';
       case 'audio': return '$prefix🎤 Voice message';
       default: return '$prefix${msg.content}';
     }

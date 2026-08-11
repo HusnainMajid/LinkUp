@@ -34,8 +34,8 @@ class ChatRepository {
     if (currentUserId == null) return [];
 
     try {
-      // Fetch data via RPC
-      final response = await _supabase.rpc('get_user_conversations_v3');
+      // Use the latest RPC version (v4 includes storage fields)
+      final response = await _supabase.rpc('get_user_conversations_v4');
       
       if (response == null) return [];
 
@@ -46,7 +46,6 @@ class ChatRepository {
       return conversations;
     } catch (e) {
       debugPrint('ChatRepository: Error mapping conversations: $e');
-      // If error occurs, return empty list instead of crashing
       return [];
     }
   }
@@ -168,6 +167,10 @@ class ChatRepository {
     required String conversationId,
     required String content,
     String type = 'text',
+    String? storagePath,
+    String? fileName,
+    int? fileSize,
+    String? mimeType,
   }) async {
     final currentUser = _supabase.auth.currentUser;
     if (currentUser == null) {
@@ -176,40 +179,54 @@ class ChatRepository {
     }
 
     try {
-      debugPrint('Attempting to send message: conv=$conversationId, sender=${currentUser.id}');
-      
       await _supabase.from('messages').insert({
         'conversation_id': conversationId,
         'sender_id': currentUser.id,
         'content': content,
         'message_type': type,
+        'storage_path': storagePath,
+        'file_name': fileName,
+        'file_size': fileSize,
+        'mime_type': mimeType,
       });
       
-      debugPrint('Message inserted successfully.');
-
-      // Update conversation's updated_at to bring it to the top of the list
+      // Update conversation's updated_at
       try {
         await _supabase
             .from('conversations')
             .update({'updated_at': DateTime.now().toIso8601String()})
             .eq('id', conversationId);
-        debugPrint('Conversation timestamp updated.');
-      } catch (e) {
-        // If message insertion succeeds but timestamp update fails, 
-        // we don't want to report a failed send to the user.
-        debugPrint('Warning: Failed to update conversation timestamp: $e');
-      }
-    } on PostgrestException catch (e) {
-      debugPrint('Supabase PostgrestException sending message:');
-      debugPrint('  Message: ${e.message}');
-      debugPrint('  Code: ${e.code}');
-      debugPrint('  Details: ${e.details}');
-      debugPrint('  Hint: ${e.hint}');
-      rethrow;
+      } catch (_) {}
     } catch (e) {
-      debugPrint('Unexpected error sending message: $e');
+      debugPrint('Error sending message: $e');
       rethrow;
     }
+  }
+
+  Future<String> uploadChatMedia({
+    required String conversationId,
+    required String filePath,
+    required String fileName,
+    required String bucket,
+  }) async {
+    final currentUserId = _supabase.auth.currentUser?.id;
+    if (currentUserId == null) throw Exception('User not authenticated');
+
+    final uniqueName = '${DateTime.now().millisecondsSinceEpoch}_$fileName';
+    final path = '$conversationId/$currentUserId/images/$uniqueName';
+
+    // File handling is done in the UI layer for Step 7 to keep the repo clean
+    return path;
+  }
+
+  // To be used with real File objects in implementation
+  Future<String> uploadFile(String bucket, String path, dynamic file) async {
+    return await _supabase.storage.from(bucket).upload(path, file);
+  }
+
+  Future<String> getMediaUrl(String path) async {
+    // Because it is a private bucket, we use createSignedUrl
+    return await _supabase.storage.from('chat-media').createSignedUrl(path, 3600);
   }
 
   Stream<List<Message>> subscribeToMessages(String conversationId) {
