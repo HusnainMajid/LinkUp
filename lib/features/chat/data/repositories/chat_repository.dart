@@ -260,10 +260,14 @@ class ChatRepository {
       'delivered_at': DateTime.now().toIso8601String(),
     });
 
-    await _supabase
-        .from('conversations')
-        .update({'updated_at': DateTime.now().toIso8601String()})
-        .eq('id', conversationId);
+    try {
+      await _supabase
+          .from('conversations')
+          .update({'updated_at': DateTime.now().toIso8601String()})
+          .eq('id', conversationId);
+    } catch (e) {
+      debugPrint('ChatRepository: Could not update conversation timestamp: $e');
+    }
   }
 
   Stream<List<Message>> subscribeToMessages(String conversationId) {

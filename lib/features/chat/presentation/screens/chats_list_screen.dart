@@ -205,10 +205,7 @@ class _ChatsListScreenState extends State<ChatsListScreen> {
           
           final conversation = conversations[index - 1];
           final otherUser = _chatRepository.getOtherParticipant(conversation);
-          final prefs = conversation.preferences;
-          final isUnread = prefs?.lastReadAt == null || 
-              (conversation.latestMessage != null && 
-               conversation.latestMessage!.createdAt.isAfter(prefs!.lastReadAt!));
+          final isUnread = conversation.unreadCount > 0;
 
           return _buildChatRow(context, conversation, otherUser, isUnread);
         },
@@ -311,11 +308,14 @@ class _ChatsListScreenState extends State<ChatsListScreen> {
                       if (isUnread)
                         Container(
                           margin: const EdgeInsets.only(left: 8),
-                          width: 10,
-                          height: 10,
+                          padding: const EdgeInsets.all(6),
                           decoration: const BoxDecoration(
                             color: AppColors.primary,
                             shape: BoxShape.circle,
+                          ),
+                          child: Text(
+                            conversation.unreadCount.toString(),
+                            style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
                           ),
                         ),
                     ],

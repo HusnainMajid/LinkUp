@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' as sb;
 import 'package:path/path.dart' as path;
 import '../../../../core/theme/app_colors.dart';
+import '../../../../core/notifications/notification_service.dart';
 import '../../../../shared/widgets/app_avatar.dart';
 import '../../../../shared/widgets/app_button.dart';
 import '../../../auth/models/profile_model.dart';
@@ -51,6 +52,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _setupTypingStatus();
     _setupPresence();
     _chatRepository.markMessagesAsRead(widget.conversationId);
+    NotificationService().setActiveConversation(widget.conversationId);
   }
 
   void _setupTypingStatus() {
@@ -151,7 +153,7 @@ class _ChatScreenState extends State<ChatScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to process message.')),
+          SnackBar(content: Text('Error: $e')),
         );
       }
     }
@@ -169,6 +171,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
+    NotificationService().setActiveConversation(null);
     _chatRepository.updatePresence(false);
     _chatRepository.setTypingStatus(widget.conversationId, false);
     _typingSubscription?.cancel();

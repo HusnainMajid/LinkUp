@@ -36,6 +36,7 @@ class Conversation {
   final List<Profile>? members;
   final Message? latestMessage;
   final ConversationPreferences? preferences;
+  final int unreadCount;
 
   Conversation({
     required this.id,
@@ -45,6 +46,7 @@ class Conversation {
     this.members,
     this.latestMessage,
     this.preferences,
+    this.unreadCount = 0,
   });
 
   factory Conversation.fromJson(Map<String, dynamic> json) {
@@ -63,6 +65,7 @@ class Conversation {
       members: membersList,
       latestMessage: json['latest_message'] != null ? Message.fromJson(json['latest_message']) : null,
       preferences: ConversationPreferences.fromJson(json['preferences']),
+      unreadCount: json['unread_count'] ?? 0,
     );
   }
 

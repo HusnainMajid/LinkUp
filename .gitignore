@@ -43,3 +43,13 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# LinkUp Security & Config
+android/app/google-services.json
+*-firebase-adminsdk-*.json
+.env
+.env.*
+node_modules/
+.supabase/
+supabase/.temp/
+.artifacts/

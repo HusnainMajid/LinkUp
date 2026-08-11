@@ -1,4 +1,6 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../../core/notifications/notification_service.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 
 class AuthService {
   final SupabaseClient _supabase = Supabase.instance.client;
@@ -17,7 +19,7 @@ class AuthService {
     required String fullName,
     required String username,
   }) async {
-    return await _supabase.auth.signUp(
+    final response = await _supabase.auth.signUp(
       email: email,
       password: password,
       data: {
@@ -25,6 +27,10 @@ class AuthService {
         'username': username,
       },
     );
+    if (response.user != null) {
+      _registerFCMToken();
+    }
+    return response;
   }
 
   // Verify OTP
@@ -33,11 +39,15 @@ class AuthService {
     required String token,
     required OtpType type,
   }) async {
-    return await _supabase.auth.verifyOTP(
+    final response = await _supabase.auth.verifyOTP(
       email: email,
       token: token,
       type: type,
     );
+    if (response.session != null) {
+      _registerFCMToken();
+    }
+    return response;
   }
 
   // Resend OTP
@@ -56,15 +66,29 @@ class AuthService {
     required String email,
     required String password,
   }) async {
-    return await _supabase.auth.signInWithPassword(
+    final response = await _supabase.auth.signInWithPassword(
       email: email,
       password: password,
     );
+    if (response.session != null) {
+      _registerFCMToken();
+    }
+    return response;
   }
 
   // Sign Out
   Future<void> signOut() async {
+    await NotificationService().removeToken();
     await _supabase.auth.signOut();
+  }
+
+  Future<void> _registerFCMToken() async {
+    final token = await FirebaseMessaging.instance.getToken();
+    if (token != null) {
+      // NotificationService handles the Supabase persistence
+      // We trigger it here to ensure it's saved after login
+      NotificationService().initialize(); 
+    }
   }
 
   // Reset Password

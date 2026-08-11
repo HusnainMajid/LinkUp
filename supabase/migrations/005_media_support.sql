@@ -33,7 +33,7 @@ USING (
 );
 */
 
--- Update the RPC to include these new fields
+-- Update the RPC to include unread counts
 CREATE OR REPLACE FUNCTION get_user_conversations_v4()
 RETURNS JSONB AS $$
 DECLARE
@@ -79,7 +79,15 @@ BEGIN
                 )
                 FROM user_conversation_preferences ucp
                 WHERE ucp.conversation_id = c.id AND ucp.user_id = auth.uid()
-            ) as preferences
+            ) as preferences,
+            (
+                SELECT count(*)::int
+                FROM messages m
+                LEFT JOIN user_conversation_preferences ucp ON ucp.conversation_id = c.id AND ucp.user_id = auth.uid()
+                WHERE m.conversation_id = c.id
+                  AND m.sender_id <> auth.uid()
+                  AND (ucp.last_read_at IS NULL OR m.created_at > ucp.last_read_at)
+            ) as unread_count
         FROM conversations c
         JOIN conversation_members cm_self ON cm_self.conversation_id = c.id
         WHERE cm_self.user_id = auth.uid()
