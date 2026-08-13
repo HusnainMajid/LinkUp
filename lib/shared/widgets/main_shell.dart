@@ -119,9 +119,9 @@ class _MainShellState extends State<MainShell> {
                 label: 'Chats',
               ),
               NavigationDestination(
-                icon: Icon(Icons.group_outlined, size: 24),
-                selectedIcon: Icon(Icons.group_rounded, color: AppColors.primary, size: 26),
-                label: 'Groups',
+                icon: Icon(Icons.call_outlined, size: 24),
+                selectedIcon: Icon(Icons.call_rounded, color: AppColors.primary, size: 26),
+                label: 'Calls',
               ),
               NavigationDestination(
                 icon: Icon(Icons.auto_awesome_mosaic_outlined, size: 24),

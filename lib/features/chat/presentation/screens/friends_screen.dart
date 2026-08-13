@@ -2,11 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../shared/widgets/app_avatar.dart';
-import '../../../../shared/widgets/app_card.dart';
-import '../../../../shared/widgets/app_text_field.dart';
+import '../../../../shared/widgets/app_button.dart';
 import '../../../auth/models/profile_model.dart';
-import '../../data/repositories/friend_repository.dart';
 import '../../data/repositories/chat_repository.dart';
+import '../../data/repositories/friend_repository.dart';
 
 class FriendsScreen extends StatefulWidget {
   const FriendsScreen({super.key});
@@ -18,10 +17,8 @@ class FriendsScreen extends StatefulWidget {
 class _FriendsScreenState extends State<FriendsScreen> {
   final _friendRepository = FriendRepository();
   final _chatRepository = ChatRepository();
-  final _searchController = TextEditingController();
-  List<Profile> _allFriends = [];
-  List<Profile> _filteredFriends = [];
   bool _isLoading = true;
+  List<Profile> _friends = [];
 
   @override
   void initState() {
@@ -30,131 +27,85 @@ class _FriendsScreenState extends State<FriendsScreen> {
   }
 
   Future<void> _loadFriends() async {
+    setState(() => _isLoading = true);
     try {
       final friends = await _friendRepository.getFriends();
-      if (mounted) {
-        setState(() {
-          _allFriends = friends;
-          _filteredFriends = friends;
-          _isLoading = false;
-        });
-      }
+      if (mounted) setState(() { _friends = friends; _isLoading = false; });
     } catch (e) {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  void _onSearch(String query) {
-    setState(() {
-      _filteredFriends = _allFriends
-          .where((f) =>
-              (f.fullName?.toLowerCase().contains(query.toLowerCase()) ?? false) ||
-              (f.username?.toLowerCase().contains(query.toLowerCase()) ?? false))
-          .toList();
-    });
-  }
-
-  Future<void> _startChat(String userId) async {
-    try {
-      final conversationId = await _chatRepository.getOrCreateDirectConversation(userId);
-      if (mounted) {
-        context.push('/chat/$conversationId');
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.toString().replaceAll('Exception: ', ''))),
-        );
-      }
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
     return Scaffold(
-      backgroundColor: isDark ? AppColors.backgroundDark : AppColors.background,
       appBar: AppBar(
-        title: const Text('Friends'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.person_add_rounded),
-            onPressed: () => context.push('/new-chat'),
-          ),
-        ],
+        title: const Text('Friends', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 20)),
+        centerTitle: true,
       ),
-      body: Column(
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _friends.isEmpty
+              ? _buildEmptyState()
+              : RefreshIndicator(
+                  onRefresh: _loadFriends,
+                  child: ListView.builder(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    itemCount: _friends.length,
+                    itemBuilder: (context, index) => _buildFriendRow(_friends[index]),
+                  ),
+                ),
+    );
+  }
+
+  Widget _buildFriendRow(Profile friend) {
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      leading: AppAvatar(imageUrl: friend.avatarUrl, initials: friend.fullName, size: 54, showOnlineIndicator: friend.isOnline ?? false),
+      title: Text(friend.fullName ?? 'User', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+      subtitle: Text('@${friend.username ?? 'username'}', style: const TextStyle(color: Colors.grey, fontSize: 13, fontWeight: FontWeight.w500)),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: AppTextField(
-              controller: _searchController,
-              hint: 'Search friends...',
-              prefixIcon: const Icon(Icons.search_rounded),
-              onChanged: _onSearch,
-            ),
-          ),
-          Expanded(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : _filteredFriends.isEmpty
-                    ? _buildEmptyState(isDark)
-                    : ListView.builder(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        itemCount: _filteredFriends.length,
-                        itemBuilder: (context, index) {
-                          final friend = _filteredFriends[index];
-                          return _buildFriendItem(friend);
-                        },
-                      ),
-          ),
+          _buildActionIcon(Icons.chat_bubble_outline_rounded, () async {
+            final convId = await _chatRepository.getOrCreateDirectConversation(friend.id);
+            if (mounted) context.push('/chat/$convId');
+          }),
+          const SizedBox(width: 8),
+          _buildActionIcon(Icons.person_outline_rounded, () => context.push('/user/${friend.id}')),
         ],
       ),
     );
   }
 
-  Widget _buildFriendItem(Profile friend) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: AppCard(
-        padding: EdgeInsets.zero,
-        onTap: () => context.push('/user/${friend.id}'),
-        child: ListTile(
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          leading: AppAvatar(
-            imageUrl: friend.avatarUrl,
-            initials: friend.fullName ?? 'U',
-            size: 48,
-            showOnlineIndicator: true,
-          ),
-          title: Text(
-            friend.fullName ?? 'User',
-            style: const TextStyle(fontWeight: FontWeight.bold),
-          ),
-          subtitle: Text(
-            '@${friend.username ?? 'username'}',
-            style: const TextStyle(color: AppColors.primary, fontSize: 12),
-          ),
-          trailing: IconButton(
-            icon: const Icon(Icons.chat_bubble_outline_rounded, color: AppColors.primary),
-            onPressed: () => _startChat(friend.id),
-          ),
-        ),
+  Widget _buildActionIcon(IconData icon, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(color: AppColors.primary.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(12)),
+        child: Icon(icon, color: AppColors.primary, size: 18),
       ),
     );
   }
 
-  Widget _buildEmptyState(bool isDark) {
+  Widget _buildEmptyState() {
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.people_outline_rounded, size: 64, color: AppColors.primary.withValues(alpha: 0.2)),
-          const SizedBox(height: 16),
-          const Text('No friends found', style: TextStyle(fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          const Text('Find people to connect with.', style: TextStyle(color: Colors.grey, fontSize: 13)),
+          Container(
+            padding: const EdgeInsets.all(28),
+            decoration: BoxDecoration(color: AppColors.primary.withValues(alpha: 0.08), shape: BoxShape.circle),
+            child: const Icon(Icons.people_outline_rounded, size: 48, color: AppColors.primary),
+          ),
+          const SizedBox(height: 32),
+          const Text('No friends yet', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+          const SizedBox(height: 12),
+          const Text('Discover and add people to start chatting.', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.w500)),
+          const SizedBox(height: 32),
+          AppButton(text: 'Discover People', width: 200, type: AppButtonType.primary, height: 48, onPressed: () => context.push('/discovery')),
         ],
       ),
     );

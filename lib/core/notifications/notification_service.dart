@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:convert';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'notification_router.dart';
 
@@ -23,6 +25,11 @@ class NotificationService {
   String? _activeConversationId;
 
   Future<void> initialize() async {
+    // 0. Request explicit permission for Android 13+
+    if (Platform.isAndroid) {
+      await Permission.notification.request();
+    }
+
     // 1. Initialize Local Notifications for Foreground
     const AndroidInitializationSettings androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
     const InitializationSettings initSettings = InitializationSettings(android: androidInit);
@@ -102,6 +109,11 @@ class NotificationService {
     final type = message.data['type'];
     final conversationId = message.data['conversation_id'];
 
+    if (type == 'voice_call') {
+      NotificationRouter.handleRemoteMessage(message);
+      return;
+    }
+
     // Don't show notification if user is already in the chat
     if (type == 'message' && conversationId == _activeConversationId) {
       return;
@@ -122,9 +134,10 @@ class NotificationService {
       message.notification?.title ?? 'New Message',
       message.notification?.body ?? '',
       platformDetails,
-      payload: message.data.toString(),
+      payload: jsonEncode(message.data),
     );
   }
+
 
   Future<void> _saveTokenToSupabase(String token) async {
     final user = Supabase.instance.client.auth.currentUser;

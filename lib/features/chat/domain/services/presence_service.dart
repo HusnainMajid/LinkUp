@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import '../data/repositories/chat_repository.dart';
+import '../../data/repositories/chat_repository.dart';
 
 class PresenceService with WidgetsBindingObserver {
   static final PresenceService _instance = PresenceService._internal();

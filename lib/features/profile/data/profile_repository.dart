@@ -1,3 +1,5 @@
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../auth/models/profile_model.dart';
 
@@ -30,29 +32,33 @@ class ProfileRepository {
         .eq('id', userId);
   }
 
-  // Future for avatar upload
-  Future<String?> uploadAvatar(String filePath, String fileExtension) async {
-    // Note: Supabase Storage bucket 'avatars' must be created and public/private RLS set.
+  Future<String?> uploadAvatar(File file) async {
     final userId = _supabase.auth.currentUser?.id;
     if (userId == null) return null;
 
-    final path = '$userId/avatar.$fileExtension';
+    final fileExtension = file.path.split('.').last;
+    final path = '$userId/avatar.${DateTime.now().millisecondsSinceEpoch}.$fileExtension';
     
     try {
+      // 1. Upload the file
       await _supabase.storage.from('avatars').upload(
         path,
-        // File is passed as bytes in Supabase Flutter if using cross-platform usually, 
-        // but here we just leave the placeholder logic as per instructions:
-        // "DO NOT create fake uploads. If Storage is not configured, clearly report..."
-        // I will assume for now I only implement the UI part and the repo method signature.
-        null as dynamic, // Placeholder
+        file,
         fileOptions: const FileOptions(upsert: true),
       );
       
+      // 2. Get public URL
       final String publicUrl = _supabase.storage.from('avatars').getPublicUrl(path);
+
+      // 3. Update profile with new URL
+      await _supabase
+          .from('profiles')
+          .update({'avatar_url': publicUrl})
+          .eq('id', userId);
+
       return publicUrl;
     } catch (e) {
-      // Storage might not be configured
+      debugPrint('ProfileRepository: Avatar upload failed: $e');
       return null;
     }
   }

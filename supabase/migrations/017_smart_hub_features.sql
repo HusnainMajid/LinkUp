@@ -75,3 +75,11 @@ CREATE POLICY "Users can delete their own notes." ON notes
 ALTER PUBLICATION supabase_realtime ADD TABLE tasks;
 ALTER PUBLICATION supabase_realtime ADD TABLE events;
 ALTER PUBLICATION supabase_realtime ADD TABLE notes;
+
+-- Indexes for performance
+CREATE INDEX idx_tasks_user_id ON tasks(user_id);
+CREATE INDEX idx_tasks_completed ON tasks(completed);
+CREATE INDEX idx_events_user_id ON events(user_id);
+CREATE INDEX idx_events_event_date ON events(event_date);
+CREATE INDEX idx_notes_user_id ON notes(user_id);
+

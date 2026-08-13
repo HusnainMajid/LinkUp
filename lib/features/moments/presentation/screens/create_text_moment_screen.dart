@@ -37,7 +37,8 @@ class _CreateTextMomentScreenState extends State<CreateTextMomentScreen> {
 
     setState(() => _isUploading = true);
     try {
-      final colorHex = '#${_colors[_selectedColorIndex].value.toRadixString(16).substring(2)}';
+      final color = _colors[_selectedColorIndex];
+      final colorHex = '#${color.value.toRadixString(16).padLeft(8, '0').substring(2)}';
       await _momentRepository.createTextMoment(_textController.text.trim(), backgroundColor: colorHex);
       if (mounted) context.pop();
     } catch (e) {
@@ -75,24 +76,43 @@ class _CreateTextMomentScreenState extends State<CreateTextMomentScreen> {
       body: Stack(
         children: [
           Center(
-            child: Padding(
-              padding: const EdgeInsets.all(40),
-              child: TextField(
-                controller: _textController,
-                autofocus: true,
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.bold),
-                maxLines: null,
-                decoration: const InputDecoration(
-                  hintText: 'Share a thought...',
-                  hintStyle: TextStyle(color: Colors.white60),
-                  border: InputBorder.none,
-                ),
-                maxLength: 150,
-                buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
+            child: Container(
+              margin: const EdgeInsets.all(24),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(24),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.1),
+                    blurRadius: 20,
+                    offset: const Offset(0, 10),
+                  ),
+                ],
               ),
+              child: Theme(
+                data: Theme.of(context).copyWith(
+                  textSelectionTheme: const TextSelectionThemeData(cursorColor: Colors.black),
+                ),
+                child: TextField(
+                  controller: _textController,
+                  autofocus: true,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.black, fontSize: 24, fontWeight: FontWeight.bold),
+                  maxLines: null,
+                  decoration: const InputDecoration(
+                    hintText: 'Share a thought...',
+                    hintStyle: TextStyle(color: Colors.black38),
+                    border: InputBorder.none,
+                  ),
+                  maxLength: 150,
+                  buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
+                ),
+              ),
+
             ),
           ),
+
           Positioned(
             bottom: 40,
             left: 0,

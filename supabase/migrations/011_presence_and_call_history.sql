@@ -1,8 +1,5 @@
 -- Presence: Add last_seen_at if not already present (migration 007 used last_seen)
 -- We will stick with last_seen for compatibility with existing profile_model.dart
--- But we'll add an is_online column if it's missing.
-
--- The mark_messages_as_read RPC is already in 007.
 
 -- RPC to get call history with profile details
 CREATE OR REPLACE FUNCTION get_call_history()
@@ -44,5 +41,16 @@ BEGIN
         is_online = online,
         last_seen = now()
     WHERE id = auth.uid();
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Function to clear call history for current user
+CREATE OR REPLACE FUNCTION clear_call_history()
+RETURNS VOID AS $$
+BEGIN
+    -- We can't easily delete per-user without a junction table for history visibility.
+    -- For simplicity, we delete any call where the user was a participant.
+    DELETE FROM voice_calls
+    WHERE caller_id = auth.uid() OR receiver_id = auth.uid();
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:rxdart/rxdart.dart';
 import '../../../auth/models/profile_model.dart';
 import '../models/conversation_model.dart';
 import '../models/message_model.dart';
@@ -9,7 +10,9 @@ import '../models/message_reaction_model.dart';
 
 class ChatRepository {
   final SupabaseClient _supabase = Supabase.instance.client;
+  SupabaseClient get supabase => _supabase;
   RealtimeChannel? _typingChannel;
+
 
   Future<List<Profile>> searchUsers(String query) async {
     final currentUserId = _supabase.auth.currentUser?.id;
@@ -24,6 +27,58 @@ class ChatRepository {
     
     return (response as List).map((json) => Profile.fromJson(json)).toList();
   }
+
+  Future<List<Profile>> getOnlineUsers() async {
+    final currentUserId = _supabase.auth.currentUser?.id;
+    final response = await _supabase
+        .from('profiles')
+        .select()
+        .eq('is_online', true)
+        .neq('id', currentUserId ?? '')
+        .limit(10);
+    
+    return (response as List).map((json) => Profile.fromJson(json)).toList();
+  }
+
+  Future<List<Profile>> getRecentlyActiveUsers() async {
+    final currentUserId = _supabase.auth.currentUser?.id;
+    final response = await _supabase
+        .from('profiles')
+        .select()
+        .neq('id', currentUserId ?? '')
+        .order('last_seen', ascending: false)
+        .limit(10);
+    
+    return (response as List).map((json) => Profile.fromJson(json)).toList();
+  }
+
+  Future<List<Profile>> getSuggestedUsers() async {
+    final currentUserId = _supabase.auth.currentUser?.id;
+    if (currentUserId == null) return [];
+
+    // Get IDs of users who are already friends or have pending requests
+    final friendsResponse = await _supabase
+        .from('friend_requests')
+        .select('sender_id, receiver_id')
+        .or('sender_id.eq.$currentUserId,receiver_id.eq.$currentUserId')
+        .neq('status', 'rejected')
+        .neq('status', 'cancelled');
+    
+    final List<String> excludedIds = [currentUserId];
+    for (var row in friendsResponse as List) {
+      excludedIds.add(row['sender_id']);
+      excludedIds.add(row['receiver_id']);
+    }
+
+    final response = await _supabase
+        .from('profiles')
+        .select()
+        .not('id', 'in', excludedIds.toSet().toList())
+        .limit(10);
+    
+    return (response as List).map((json) => Profile.fromJson(json)).toList();
+  }
+
 
   Future<String> getOrCreateDirectConversation(String otherUserId) async {
     try {
@@ -67,31 +122,105 @@ class ChatRepository {
     if (currentUserId == null) return [];
 
     try {
-      final response = await _supabase.rpc('get_user_conversations_v4');
+      final response = await _supabase.rpc('get_user_conversations_v6');
       if (response == null) return [];
       return (response as List).map((json) => Conversation.fromJson(json)).toList();
     } catch (e) {
-      debugPrint('ChatRepository: Error mapping conversations: $e');
-      return [];
+      debugPrint('ChatRepository: Error mapping conversations (trying v5 fallback): $e');
+      try {
+        final response = await _supabase.rpc('get_user_conversations_v5');
+        if (response == null) return [];
+        return (response as List).map((json) => Conversation.fromJson(json)).toList();
+      } catch (e2) {
+        debugPrint('ChatRepository: Error in v5 fallback: $e2');
+        return [];
+      }
     }
+  }
+
+  Future<String> createGroup({
+    required String name,
+    String? avatarUrl,
+    required List<String> memberIds,
+  }) async {
+    final response = await _supabase.rpc('create_group', params: {
+      'group_name': name,
+      'group_avatar_url': avatarUrl,
+      'member_ids': memberIds,
+    });
+    return response as String;
+  }
+
+  Future<void> updateGroupInfo(String groupId, {String? name, String? avatarUrl}) async {
+    final updates = <String, dynamic>{'updated_at': DateTime.now().toIso8601String()};
+    if (name != null) updates['name'] = name;
+    if (avatarUrl != null) updates['avatar_url'] = avatarUrl;
+
+    await _supabase.from('conversations').update(updates).eq('id', groupId);
+  }
+
+  Future<void> addGroupMembers(String groupId, List<String> userIds) async {
+    final members = userIds.map((id) => {
+      'conversation_id': groupId,
+      'user_id': id,
+      'role': 'MEMBER',
+    }).toList();
+
+    await _supabase.from('conversation_members').insert(members);
+  }
+
+  Future<void> removeGroupMember(String groupId, String userId) async {
+    await _supabase
+        .from('conversation_members')
+        .delete()
+        .eq('conversation_id', groupId)
+        .eq('user_id', userId);
+  }
+
+  Future<void> updateMemberRole(String groupId, String userId, String role) async {
+    await _supabase
+        .from('conversation_members')
+        .update({'role': role})
+        .eq('conversation_id', groupId)
+        .eq('user_id', userId);
+  }
+
+  Future<void> leaveGroup(String groupId) async {
+    final userId = _supabase.auth.currentUser!.id;
+    await removeGroupMember(groupId, userId);
   }
 
   Stream<List<Conversation>> subscribeToConversations() {
     final currentUserId = _supabase.auth.currentUser?.id;
     if (currentUserId == null) return Stream.value([]);
 
-    return _supabase
+    // Listen to changes in conversation members (new chats)
+    // AND listen to changes in conversations (updated activity)
+    // AND listen to changes in messages (new messages)
+    
+    final membersStream = _supabase
         .from('conversation_members')
         .stream(primaryKey: ['conversation_id', 'user_id'])
-        .eq('user_id', currentUserId)
-        .asyncMap((_) async => await getUserConversations());
+        .eq('user_id', currentUserId);
+
+    final messagesStream = _supabase
+        .from('messages')
+        .stream(primaryKey: ['id'])
+        .limit(1);
+
+    // Combine them into a single update trigger
+    return Rx.combineLatest2(
+      membersStream,
+      messagesStream,
+      (_, _) => null,
+    ).asyncMap((_) => getUserConversations());
   }
 
   Stream<void> get globalChatUpdateTrigger {
     return _supabase
         .from('messages')
         .stream(primaryKey: ['id'])
-        .map((_) => null);
+        .map((_) {});
   }
 
   // Conversation Management Methods (Restored)
@@ -215,19 +344,65 @@ class ChatRepository {
     final userId = _supabase.auth.currentUser?.id;
     if (userId == null) return;
 
-    await _supabase.from('profiles').update({
-      'is_online': isOnline,
-      'last_seen': DateTime.now().toIso8601String(),
-    }).eq('id', userId);
+    try {
+      await _supabase.rpc('update_user_presence', params: {'online': isOnline});
+    } catch (e) {
+      debugPrint('ChatRepository: Error updating presence: $e');
+    }
+  }
+
+  Stream<Profile> subscribeToUserPresence(String userId) {
+    return _supabase
+        .from('profiles')
+        .stream(primaryKey: ['id'])
+        .eq('id', userId)
+        .map((event) => Profile.fromJson(event.first));
+  }
+
+  Future<List<Map<String, dynamic>>> getCallHistory() async {
+    try {
+      final response = await _supabase.rpc('get_call_history');
+      if (response == null) return [];
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      debugPrint('ChatRepository: Error fetching call history: $e');
+      return [];
+    }
+  }
+
+  Stream<List<Map<String, dynamic>>> subscribeToCallHistory() {
+    final currentUserId = _supabase.auth.currentUser?.id;
+    if (currentUserId == null) return Stream.value([]);
+
+    // Listen to changes in voice_calls involving the current user
+    return _supabase
+        .from('voice_calls')
+        .stream(primaryKey: ['id'])
+        .asyncMap((_) => getCallHistory());
+  }
+
+  Future<void> clearCallHistory() async {
+    try {
+      await _supabase.rpc('clear_call_history');
+    } catch (e) {
+      debugPrint('ChatRepository: Error clearing call history: $e');
+    }
   }
 
   Stream<List<Profile>> subscribeToPresence(String conversationId) {
+    // Listen to profile changes for members of this conversation
     return _supabase
-        .from('conversation_members')
-        .stream(primaryKey: ['conversation_id', 'user_id'])
-        .eq('conversation_id', conversationId)
-        .asyncMap((members) async {
-          final ids = members.map((m) => m['user_id'] as String).toList();
+        .from('profiles')
+        .stream(primaryKey: ['id'])
+        .asyncMap((_) async {
+          final membersResponse = await _supabase
+              .from('conversation_members')
+              .select('user_id')
+              .eq('conversation_id', conversationId);
+          
+          final ids = (membersResponse as List).map((m) => m['user_id'] as String).toList();
+          if (ids.isEmpty) return [];
+          
           final profiles = await _supabase.from('profiles').select().inFilter('id', ids);
           return (profiles as List).map((json) => Profile.fromJson(json)).toList();
         });
@@ -278,17 +453,23 @@ class ChatRepository {
         .order('created_at', ascending: false)
         .asyncMap((data) async {
           final messageIds = data.map((m) => m['id'] as String).toList();
+          final senderIds = data.map((m) => m['sender_id'] as String).toSet().toList();
           if (messageIds.isEmpty) return [];
 
           List<MessageReaction> msgReactions = [];
+          List<Profile> senders = [];
+          
           try {
-            final reactionsResponse = await _supabase
-                .from('message_reactions')
-                .select()
-                .inFilter('message_id', messageIds);
-            msgReactions = (reactionsResponse as List).map((r) => MessageReaction.fromJson(r)).toList();
+            // Parallel fetch for reactions and sender profiles
+            final results = await Future.wait([
+              _supabase.from('message_reactions').select().inFilter('message_id', messageIds),
+              _supabase.from('profiles').select().inFilter('id', senderIds),
+            ]);
+            
+            msgReactions = (results[0] as List).map((r) => MessageReaction.fromJson(r)).toList();
+            senders = (results[1] as List).map((p) => Profile.fromJson(p)).toList();
           } catch (e) {
-            debugPrint('ChatRepository: Error fetching reactions (ensure migration 007 is run): $e');
+            debugPrint('ChatRepository: Error enriching messages: $e');
           }
           
           return data.map((json) {
@@ -296,8 +477,11 @@ class ChatRepository {
                 .where((r) => r.messageId == json['id'])
                 .toList();
             
+            final sender = senders.firstWhere((p) => p.id == json['sender_id'], orElse: () => Profile(id: json['sender_id']));
+            
             final Map<String, dynamic> enrichedJson = Map.from(json);
-            // We don't put 'reactions' into json because Message.fromJson handles it differently
+            enrichedJson['sender_name'] = sender.fullName ?? sender.username ?? 'User';
+            
             final message = Message.fromJson(enrichedJson);
             return message.copyWith(reactions: reactions);
           }).toList();

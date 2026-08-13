@@ -53,3 +53,5 @@ node_modules/
 .supabase/
 supabase/.temp/
 .artifacts/
+
+android/.gradle_home/

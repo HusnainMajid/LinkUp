@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../shared/widgets/app_avatar.dart';
 import '../../../../shared/widgets/app_button.dart';
@@ -8,6 +9,7 @@ import '../../../auth/models/profile_model.dart';
 import '../../data/repositories/chat_repository.dart';
 import '../../data/repositories/friend_repository.dart';
 import '../../data/models/friend_request_model.dart';
+import '../../domain/services/call_service.dart';
 
 class UserProfilePreviewScreen extends StatefulWidget {
   final String userId;
@@ -118,6 +120,26 @@ class _UserProfilePreviewScreenState extends State<UserProfilePreviewScreen> {
     }
   }
 
+  Future<void> _startCall() async {
+    if (_profile == null) return;
+    
+    try {
+      final status = await Permission.microphone.request();
+      if (status != PermissionStatus.granted) return;
+
+      await CallService().initCall(_profile!.id);
+      if (mounted) {
+        context.push('/outgoing-call', extra: _profile);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not start call: $e')),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
@@ -198,11 +220,28 @@ class _UserProfilePreviewScreenState extends State<UserProfilePreviewScreen> {
   Widget _buildActionButtons() {
     switch (_friendStatus) {
       case FriendStatus.friends:
-        return AppButton(
-          text: 'Message',
-          type: AppButtonType.gradient,
-          isLoading: _isActionLoading,
-          onPressed: _startConversation,
+        return Row(
+          children: [
+            Expanded(
+              child: AppButton(
+                text: 'Message',
+                type: AppButtonType.gradient,
+                isLoading: _isActionLoading,
+                onPressed: _startConversation,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Container(
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.1),
+                shape: BoxShape.circle,
+              ),
+              child: IconButton(
+                icon: const Icon(Icons.call_rounded, color: AppColors.primary),
+                onPressed: _startCall,
+              ),
+            ),
+          ],
         );
       case FriendStatus.pendingSent:
         return Column(

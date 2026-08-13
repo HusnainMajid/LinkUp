@@ -1,23 +1,29 @@
+// Global properties for plugins to use
 allprojects {
-    repositories {
-        google()
-        mavenCentral()
-    }
-    
-    // Global properties for plugins to use
     extra.set("compileSdkVersion", 36)
     extra.set("targetSdkVersion", 36)
     extra.set("minSdkVersion", 24) // Required by app_links
 }
 
-// Force all plugins to use the same SDK version
 subprojects {
-    project.plugins.withType<com.android.build.gradle.BasePlugin>().configureEach {
-        project.extensions.configure<com.android.build.gradle.BaseExtension>("android") {
-            compileSdkVersion(36)
-            defaultConfig {
-                minSdk = 24
-                targetSdk = 36
+    afterEvaluate {
+        if (project.plugins.hasPlugin("com.android.library") || project.plugins.hasPlugin("com.android.application")) {
+            extensions.configure<com.android.build.gradle.BaseExtension>("android") {
+                compileSdkVersion(36)
+                defaultConfig {
+                    minSdk = 24
+                    targetSdk = 36
+                }
+                compileOptions {
+                    sourceCompatibility = JavaVersion.VERSION_21
+                    targetCompatibility = JavaVersion.VERSION_21
+                }
+            }
+            
+            project.tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+                compilerOptions {
+                    jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_21)
+                }
             }
         }
     }

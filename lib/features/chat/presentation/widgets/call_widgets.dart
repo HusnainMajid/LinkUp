@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'dart:math' as math;
 import '../../../../core/theme/app_colors.dart';
 import '../../../../shared/widgets/app_avatar.dart';
 
@@ -7,12 +6,14 @@ class AvatarPulse extends StatefulWidget {
   final String? imageUrl;
   final String initials;
   final bool isPulseActive;
+  final bool showOnlineIndicator;
 
   const AvatarPulse({
     super.key,
     this.imageUrl,
     required this.initials,
     this.isPulseActive = true,
+    this.showOnlineIndicator = false,
   });
 
   @override
@@ -76,6 +77,7 @@ class _AvatarPulseState extends State<AvatarPulse> with SingleTickerProviderStat
               imageUrl: widget.imageUrl,
               initials: widget.initials,
               size: 140,
+              showOnlineIndicator: widget.showOnlineIndicator,
             ),
           ],
         );

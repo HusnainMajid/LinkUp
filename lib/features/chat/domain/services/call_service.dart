@@ -32,7 +32,6 @@ class CallService extends ChangeNotifier {
   MediaStream? _localStream;
   MediaStream? _remoteStream;
   
-  RealtimeChannel? _signalingChannel;
   StreamSubscription? _callUpdateSubscription;
   
   Timer? _callDurationTimer;
@@ -48,7 +47,8 @@ class CallService extends ChangeNotifier {
     'iceServers': [
       {'urls': 'stun:stun.l.google.com:19302'},
       {'urls': 'stun:stun1.l.google.com:19302'},
-    ]
+    ],
+    'sdpSemantics': 'unified-plan',
   };
 
   final Map<String, dynamic> _constraints = {
@@ -65,65 +65,67 @@ class CallService extends ChangeNotifier {
   }
 
   Future<void> initCall(String receiverId) async {
-    if (_state != CallState.idle) return;
+    debugPrint('CallService: initCall started for receiver: $receiverId');
+    if (_state != CallState.idle) {
+      debugPrint('CallService: Call already in progress');
+      return;
+    }
 
-    final callerId = _supabase.auth.currentUser!.id;
+    final currentUser = _supabase.auth.currentUser;
+    if (currentUser == null) {
+      debugPrint('CallService: No current user session');
+      _updateState(CallState.failed);
+      return;
+    }
+    final callerId = currentUser.id;
     final callId = const Uuid().v4();
 
-    _currentCall = Call(
-      id: callId,
-      callerId: callerId,
-      receiverId: receiverId,
-      status: 'outgoing',
-      type: 'voice',
-      createdAt: DateTime.now(),
-    );
-
     _updateState(CallState.outgoing);
-
+    
     try {
-      // Create call in database
-      await _supabase.from('voice_calls').insert(_currentCall!.toJson());
-
-      // Setup signaling
-      await _setupSignaling(callId);
-
-      // Setup WebRTC
+      debugPrint('CallService: Setting up WebRTC...');
       await _setupWebRTC();
+      debugPrint('CallService: WebRTC setup complete');
 
-      // Create Offer
+      debugPrint('CallService: Creating Offer...');
       RTCSessionDescription offer = await _peerConnection!.createOffer(_constraints);
       await _peerConnection!.setLocalDescription(offer);
+      debugPrint('CallService: Local description set');
 
-      // Send Offer via Broadcast
-      _signalingChannel?.sendBroadcastResponse(
-        event: 'call-offer',
-        payload: {
-          'sdp': offer.sdp,
-          'type': offer.type,
-          'caller_id': callerId,
-          'call_id': callId,
-        },
+      _currentCall = Call(
+        id: callId,
+        callerId: callerId,
+        receiverId: receiverId,
+        status: 'outgoing',
+        type: 'voice',
+        createdAt: DateTime.now(),
       );
 
+      debugPrint('CallService: Inserting call into DB...');
+      await _supabase.from('voice_calls').insert({
+        ..._currentCall!.toJson(),
+        'signaling_data': {
+          'offer': {'sdp': offer.sdp, 'type': offer.type},
+          'ice_candidates': [],
+        },
+      });
+      debugPrint('CallService: DB insertion successful');
+
       _startCallUpdateSubscription(callId);
-    } catch (e) {
+      debugPrint('CallService: Subscription started');
+    } catch (e, stack) {
       debugPrint('CallService: Error initiating call: $e');
+      debugPrint('CallService: Stack trace: $stack');
       _updateState(CallState.failed);
       _cleanup();
     }
   }
 
   Future<void> handleIncomingCall(Map<String, dynamic> data) async {
-    if (_state != CallState.idle) {
-      // Busy, reject or ignore
-      return;
-    }
+    if (_state != CallState.idle) return;
 
     final callId = data['call_id'];
-    final callerId = data['caller_id'];
     
-    // Fetch call details from DB to verify
     final response = await _supabase
         .from('voice_calls')
         .select()
@@ -133,7 +135,6 @@ class CallService extends ChangeNotifier {
     _currentCall = Call.fromJson(response);
     _updateState(CallState.ringing);
 
-    await _setupSignaling(callId);
     _startCallUpdateSubscription(callId);
   }
 
@@ -143,18 +144,42 @@ class CallService extends ChangeNotifier {
     _updateState(CallState.connecting);
 
     try {
+      await _setupWebRTC();
+
+      // Get offer from DB
+      final response = await _supabase
+          .from('voice_calls')
+          .select('signaling_data')
+          .eq('id', _currentCall!.id)
+          .single();
+      
+      final signalingData = response['signaling_data'] as Map<String, dynamic>;
+      final offerMap = signalingData['offer'] as Map<String, dynamic>;
+      
+      await _peerConnection!.setRemoteDescription(
+        RTCSessionDescription(offerMap['sdp'], offerMap['type']),
+      );
+
+      RTCSessionDescription answer = await _peerConnection!.createAnswer(_constraints);
+      await _peerConnection!.setLocalDescription(answer);
+
+      // Add existing candidates
+      final candidates = signalingData['ice_candidates'] as List;
+      for (var c in candidates) {
+        await _peerConnection!.addCandidate(
+          RTCIceCandidate(c['candidate'], c['sdpMid'], c['sdpMLineIndex']),
+        );
+      }
+
       await _supabase.from('voice_calls').update({
         'status': 'connected',
         'started_at': DateTime.now().toIso8601String(),
+        'signaling_data': {
+          ...signalingData,
+          'answer': {'sdp': answer.sdp, 'type': answer.type},
+        },
       }).eq('id', _currentCall!.id);
 
-      await _setupWebRTC();
-
-      // Send signaling will be handled after receiving the offer if not already received
-      // In this flow, the receiver should have received the offer via handleIncomingCall signaled via broadcast
-      // But wait, Broadcast 'call-offer' might have been missed if app was backgrounded.
-      // We should probably store the offer in DB or handle it via a robust signaling flow.
-      // For now, let's assume the offer comes via Broadcast when the receiver joins the channel.
     } catch (e) {
       debugPrint('CallService: Error accepting call: $e');
       _updateState(CallState.failed);
@@ -164,138 +189,96 @@ class CallService extends ChangeNotifier {
 
   Future<void> rejectCall() async {
     if (_currentCall == null) return;
-
     await _supabase.from('voice_calls').update({
       'status': 'rejected',
       'ended_at': DateTime.now().toIso8601String(),
     }).eq('id', _currentCall!.id);
-
-    _signalingChannel?.sendBroadcastResponse(
-      event: 'call-rejected',
-      payload: {'call_id': _currentCall!.id},
-    );
-
     _updateState(CallState.rejected);
     _cleanup();
   }
 
   Future<void> cancelCall() async {
     if (_currentCall == null) return;
-
     await _supabase.from('voice_calls').update({
       'status': 'cancelled',
       'ended_at': DateTime.now().toIso8601String(),
     }).eq('id', _currentCall!.id);
-
-    _signalingChannel?.sendBroadcastResponse(
-      event: 'call-cancelled',
-      payload: {'call_id': _currentCall!.id},
-    );
-
     _updateState(CallState.cancelled);
     _cleanup();
   }
 
   Future<void> endCall() async {
     if (_currentCall == null) return;
-
     final endedAt = DateTime.now();
     int? duration;
     if (_currentCall!.startedAt != null) {
       duration = endedAt.difference(_currentCall!.startedAt!).inSeconds;
     }
-
     await _supabase.from('voice_calls').update({
       'status': 'ended',
       'ended_at': endedAt.toIso8601String(),
       'duration': duration,
     }).eq('id', _currentCall!.id);
-
-    _signalingChannel?.sendBroadcastResponse(
-      event: 'call-ended',
-      payload: {'call_id': _currentCall!.id},
-    );
-
     _updateState(CallState.ended);
     _cleanup();
   }
 
   Future<void> _setupWebRTC() async {
-    _localStream = await navigator.mediaDevices.getUserMedia({
-      'audio': true,
-      'video': false,
-    });
+    try {
+      debugPrint('CallService: Getting user media...');
+      _localStream = await navigator.mediaDevices.getUserMedia({'audio': true, 'video': false});
+      debugPrint('CallService: User media obtained');
+      
+      debugPrint('CallService: Creating PeerConnection...');
+      _peerConnection = await createPeerConnection(_iceServers, _constraints);
+      debugPrint('CallService: PeerConnection created');
 
-    _peerConnection = await createPeerConnection(_iceServers, _constraints);
+      _peerConnection!.onIceCandidate = (candidate) async {
+        debugPrint('CallService: ICE Candidate generated');
+        final currentCallId = _currentCall?.id;
+        if (currentCallId == null) return;
+        
+        try {
+          final response = await _supabase.from('voice_calls').select('signaling_data').eq('id', currentCallId).single();
+          
+          final data = response['signaling_data'] as Map<String, dynamic>? ?? {};
+          final candidates = data['ice_candidates'] as List? ?? [];
+          candidates.add({
+            'candidate': candidate.candidate,
+            'sdpMid': candidate.sdpMid,
+            'sdpMLineIndex': candidate.sdpMLineIndex,
+          });
+          data['ice_candidates'] = candidates;
+          await _supabase.from('voice_calls').update({'signaling_data': data}).eq('id', currentCallId);
+        } catch (e) {
+          debugPrint('CallService: Error updating ICE candidates: $e');
+        }
+      };
 
-    _peerConnection!.onIceCandidate = (candidate) {
-      _signalingChannel?.sendBroadcastResponse(
-        event: 'ice-candidate',
-        payload: {
-          'candidate': candidate.candidate,
-          'sdpMid': candidate.sdpMid,
-          'sdpMLineIndex': candidate.sdpMLineIndex,
-        },
-      );
-    };
+      _peerConnection!.onTrack = (RTCTrackEvent event) {
+        debugPrint('CallService: Remote track received: ${event.track.kind}');
+        if (event.streams.isNotEmpty) {
+          _remoteStream = event.streams[0];
+          notifyListeners();
+        }
+      };
 
-    _peerConnection!.onAddStream = (stream) {
-      _remoteStream = stream;
-      notifyListeners();
-    };
+      _peerConnection!.onConnectionState = (state) {
+        debugPrint('CallService: Connection state changed: $state');
+        if (state == RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
+          _updateState(CallState.connected);
+          _startTimer();
+        }
+      };
 
-    _peerConnection!.onConnectionState = (state) {
-      debugPrint('CallService: Connection state: $state');
-      if (state == RTCPeerConnectionState.RTCPeerConnectionStateConnected) {
-        _updateState(CallState.connected);
-        _startTimer();
-      } else if (state == RTCPeerConnectionState.RTCPeerConnectionStateFailed ||
-                 state == RTCPeerConnectionState.RTCPeerConnectionStateDisconnected) {
-        // Handle failure
-      }
-    };
-
-    _peerConnection!.addStream(_localStream!);
-  }
-
-  Future<void> _setupSignaling(String callId) async {
-    _signalingChannel = _supabase.channel('call-signaling:$callId');
-    
-    _signalingChannel!
-      .onBroadcast(event: 'call-offer', callback: (payload) async {
-        if (_peerConnection == null) await _setupWebRTC();
-        await _peerConnection!.setRemoteDescription(
-          RTCSessionDescription(payload['sdp'], payload['type']),
-        );
-        RTCSessionDescription answer = await _peerConnection!.createAnswer(_constraints);
-        await _peerConnection!.setLocalDescription(answer);
-        _signalingChannel!.sendBroadcastResponse(
-          event: 'call-answer',
-          payload: {
-            'sdp': answer.sdp,
-            'type': answer.type,
-          },
-        );
-      })
-      .onBroadcast(event: 'call-answer', callback: (payload) async {
-        await _peerConnection?.setRemoteDescription(
-          RTCSessionDescription(payload['sdp'], payload['type']),
-        );
-      })
-      .onBroadcast(event: 'ice-candidate', callback: (payload) async {
-        await _peerConnection?.addCandidate(
-          RTCIceCandidate(payload['candidate'], payload['sdpMid'], payload['sdpMLineIndex']),
-        );
-      })
-      .onBroadcast(event: 'call-rejected', callback: (_) => _onRemoteEnded(CallState.rejected))
-      .onBroadcast(event: 'call-cancelled', callback: (_) => _onRemoteEnded(CallState.cancelled))
-      .onBroadcast(event: 'call-ended', callback: (_) => _onRemoteEnded(CallState.ended))
-      .subscribe();
-  }
-
-  void _onRemoteEnded(CallState finalState) {
-    _updateState(finalState);
-    _cleanup();
+      debugPrint('CallService: Adding local tracks to PeerConnection');
+      _localStream!.getTracks().forEach((track) {
+        _peerConnection!.addTrack(track, _localStream!);
+      });
+    } catch (e) {
+      debugPrint('CallService: _setupWebRTC error: $e');
+      rethrow;
+    }
   }
 
   void _startCallUpdateSubscription(String callId) {
@@ -303,17 +286,33 @@ class CallService extends ChangeNotifier {
         .from('voice_calls')
         .stream(primaryKey: ['id'])
         .eq('id', callId)
-        .listen((event) {
-          if (event.isNotEmpty) {
-            final updatedCall = Call.fromJson(event.first);
-            _currentCall = updatedCall;
+        .listen((event) async {
+          if (event.isNotEmpty && _currentCall != null) {
+            final row = event.first;
+            final status = row['status'];
+            final signalingData = row['signaling_data'] as Map<String, dynamic>? ?? {};
             
-            final status = updatedCall.status;
+            // Handle signaling
+            final currentUserId = _supabase.auth.currentUser?.id;
+            if (currentUserId != null && currentUserId == _currentCall!.callerId) {
+              if (signalingData.containsKey('answer') && _peerConnection?.getRemoteDescription() == null) {
+                final answer = signalingData['answer'];
+                await _peerConnection?.setRemoteDescription(RTCSessionDescription(answer['sdp'], answer['type']));
+              }
+              // Add new candidates for caller
+              final candidates = signalingData['ice_candidates'] as List? ?? [];
+              // Simple check: if local candidates are few, add them all (WebRTC handles duplicates)
+              for (var c in candidates) {
+                await _peerConnection?.addCandidate(RTCIceCandidate(c['candidate'], c['sdpMid'], c['sdpMLineIndex']));
+              }
+            }
+
             if (status == 'connected' && _state != CallState.connected) {
               _updateState(CallState.connected);
               _startTimer();
             } else if (['ended', 'rejected', 'cancelled', 'missed', 'failed'].contains(status)) {
-              _onRemoteEnded(_mapStatusToState(status));
+              _updateState(_mapStatusToState(status));
+              _cleanup();
             }
           }
         });
@@ -343,36 +342,22 @@ class CallService extends ChangeNotifier {
     _callDurationTimer?.cancel();
     _localStream?.getTracks().forEach((track) => track.stop());
     _localStream?.dispose();
-    _remoteStream?.dispose();
     _peerConnection?.close();
     _peerConnection?.dispose();
-    _signalingChannel?.unsubscribe();
     _callUpdateSubscription?.cancel();
-    
     _localStream = null;
     _remoteStream = null;
     _peerConnection = null;
-    _signalingChannel = null;
     _callUpdateSubscription = null;
     
     Future.delayed(const Duration(seconds: 3), () {
-      if (_state == CallState.ended || _state == CallState.rejected || _state == CallState.cancelled || _state == CallState.failed) {
+      if (![CallState.idle, CallState.connected, CallState.connecting].contains(_state)) {
         _currentCall = null;
         _updateState(CallState.idle);
       }
     });
   }
 
-  void toggleMute(bool isMuted) {
-    _localStream?.getAudioTracks().forEach((track) {
-      track.enabled = !isMuted;
-    });
-    notifyListeners();
-  }
-
-  void toggleSpeaker(bool isSpeaker) {
-    // In flutter_webrtc, this might be handled via Helper
-    Helper.setSpeakerphoneOn(isSpeaker);
-    notifyListeners();
-  }
+  void toggleMute(bool isMuted) => _localStream?.getAudioTracks().forEach((t) => t.enabled = !isMuted);
+  void toggleSpeaker(bool isSpeaker) => Helper.setSpeakerphoneOn(isSpeaker);
 }

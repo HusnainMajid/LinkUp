@@ -1,9 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import '../../../../core/theme/app_colors.dart';
-import '../../../../shared/widgets/app_avatar.dart';
 import '../../../auth/models/profile_model.dart';
 import '../../domain/services/call_service.dart';
+import '../widgets/call_widgets.dart';
 
 class ActiveCallScreen extends StatefulWidget {
   final Profile otherParticipant;
@@ -51,107 +50,103 @@ class _ActiveCallScreenState extends State<ActiveCallScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.backgroundDark,
-      body: SafeArea(
-        child: Column(
-          children: [
-            const Spacer(),
-            AppAvatar(
-              imageUrl: widget.otherParticipant.avatarUrl,
-              initials: widget.otherParticipant.fullName,
-              size: 140,
-            ),
-            const SizedBox(height: 32),
-            Text(
-              widget.otherParticipant.fullName,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 28,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              _formatDuration(_callService.durationSeconds),
-              style: const TextStyle(
-                color: Colors.white70,
-                fontSize: 18,
-                fontFeatures: [FontFeature.tabularFigures()],
-              ),
-            ),
-            const Spacer(),
-            Container(
-              padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 24),
-              decoration: const BoxDecoration(
-                color: AppColors.surfaceDark,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      body: Container(
+        height: double.infinity,
+        width: double.infinity,
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              AppColors.backgroundDark,
+              AppColors.backgroundDark.withValues(alpha: 0.9),
+              Colors.black,
+            ],
+          ),
+        ),
+        child: SafeArea(
+          child: SingleChildScrollView(
+            child: SizedBox(
+              height: MediaQuery.of(context).size.height - MediaQuery.of(context).padding.top - MediaQuery.of(context).padding.bottom,
+              child: Column(
                 children: [
-                  _buildCallAction(
-                    icon: _isMuted ? Icons.mic_off_rounded : Icons.mic_rounded,
-                    label: 'Mute',
-                    isActive: _isMuted,
-                    onTap: () {
-                      setState(() => _isMuted = !_isMuted);
-                      _callService.toggleMute(_isMuted);
-                    },
+                  const SizedBox(height: 60),
+                  const Text(
+                    'On Call',
+                    style: TextStyle(
+                      color: AppColors.success,
+                      fontSize: 14,
+                      letterSpacing: 1.5,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
-                  FloatingActionButton.large(
-                    heroTag: 'end-call',
-                    onPressed: () => _callService.endCall(),
-                    backgroundColor: AppColors.error,
-                    child: const Icon(Icons.call_end_rounded, color: Colors.white, size: 36),
+                  const SizedBox(height: 12),
+                  Text(
+                    widget.otherParticipant.fullName ?? 'User',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 32,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
-                  _buildCallAction(
-                    icon: _isSpeakerOn ? Icons.volume_up_rounded : Icons.volume_down_rounded,
-                    label: 'Speaker',
-                    isActive: _isSpeakerOn,
-                    onTap: () {
-                      setState(() => _isSpeakerOn = !_isSpeakerOn);
-                      _callService.toggleSpeaker(_isSpeakerOn);
-                    },
+                  const SizedBox(height: 8),
+                  Text(
+                    _formatDuration(_callService.durationSeconds),
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 18,
+                      fontFeatures: [FontFeature.tabularFigures()],
+                    ),
+                  ),
+                  const Spacer(),
+                  AvatarPulse(
+                    imageUrl: widget.otherParticipant.avatarUrl,
+                    initials: widget.otherParticipant.fullName ?? 'U',
+                    isPulseActive: false,
+                    showOnlineIndicator: true,
+                  ),
+                  const Spacer(),
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 60, left: 24, right: 24),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        CallControlButton(
+                          icon: _isMuted ? Icons.mic_off_rounded : Icons.mic_rounded,
+                          label: 'Mute',
+                          isActive: _isMuted,
+                          onTap: () {
+                            setState(() => _isMuted = !_isMuted);
+                            _callService.toggleMute(_isMuted);
+                          },
+                        ),
+                        CallControlButton(
+                          icon: Icons.call_end_rounded,
+                          label: 'End',
+                          isActive: false,
+                          color: AppColors.error,
+                          isLarge: true,
+                          onTap: () => _callService.endCall(),
+                        ),
+                        CallControlButton(
+                          icon: _isSpeakerOn ? Icons.volume_up_rounded : Icons.volume_down_rounded,
+                          label: 'Speaker',
+                          isActive: _isSpeakerOn,
+                          onTap: () {
+                            setState(() => _isSpeakerOn = !_isSpeakerOn);
+                            _callService.toggleSpeaker(_isSpeakerOn);
+                          },
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
             ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCallAction({
-    required IconData icon,
-    required String label,
-    required bool isActive,
-    required VoidCallback onTap,
-  }) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(30),
-          child: Container(
-            width: 60,
-            height: 60,
-            decoration: BoxDecoration(
-              color: isActive ? Colors.white : Colors.white.withValues(alpha: 0.1),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              icon,
-              color: isActive ? AppColors.backgroundDark : Colors.white,
-            ),
           ),
         ),
-        const SizedBox(height: 8),
-        Text(
-          label,
-          style: const TextStyle(color: Colors.white70, fontSize: 12),
-        ),
-      ],
+      ),
     );
   }
 }

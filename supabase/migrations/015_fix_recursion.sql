@@ -27,6 +27,7 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 DROP POLICY IF EXISTS "Users can view members of their conversations" ON conversation_members;
 DROP POLICY IF EXISTS "Owners can add/remove members" ON conversation_members;
 DROP POLICY IF EXISTS "Users can remove themselves from a group" ON conversation_members;
+DROP POLICY IF EXISTS "Owners and admins can manage members" ON conversation_members;
 
 -- Re-create policies using the non-recursive functions
 CREATE POLICY "Users can view members of their conversations"
@@ -45,16 +46,16 @@ ON conversation_members FOR DELETE
 TO authenticated
 USING (user_id = auth.uid());
 
--- Fix conversations SELECT policy too just in case
+-- Fix conversations policies
 DROP POLICY IF EXISTS "Users can view conversations they are members of" ON conversations;
 CREATE POLICY "Users can view conversations they are members of"
 ON conversations FOR SELECT
 TO authenticated
 USING (is_member_of_conversation(id));
 
--- Fix update policy
 DROP POLICY IF EXISTS "Users can update conversations they are members of" ON conversations;
 DROP POLICY IF EXISTS "Owners and admins can update group info" ON conversations;
+DROP POLICY IF EXISTS "Users can update basic conversation info" ON conversations;
 
 CREATE POLICY "Users can update basic conversation info"
 ON conversations FOR UPDATE
@@ -62,6 +63,18 @@ TO authenticated
 USING (is_member_of_conversation(id))
 WITH CHECK (is_member_of_conversation(id));
 
--- Note: Specific field restrictions like 'only owner can change name'
--- should ideally be handled in the update policy using CASE or check but
--- for now, member-level check is safer than recursion.
+-- Fix messages policy to avoid using SELECT conversation_members directly
+DROP POLICY IF EXISTS "Users can insert messages in their conversations" ON messages;
+CREATE POLICY "Users can insert messages in their conversations"
+ON messages FOR INSERT
+TO authenticated
+WITH CHECK (
+    sender_id = auth.uid() AND
+    is_member_of_conversation(conversation_id)
+);
+
+DROP POLICY IF EXISTS "Users can select messages in their conversations" ON messages;
+CREATE POLICY "Users can select messages in their conversations"
+ON messages FOR SELECT
+TO authenticated
+USING (is_member_of_conversation(conversation_id));

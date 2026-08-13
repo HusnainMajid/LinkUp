@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:go_router/go_router.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../shared/widgets/app_avatar.dart';
-import '../../../auth/models/profile_model.dart';
+import '../../data/models/call_model.dart';
 import '../../data/repositories/chat_repository.dart';
-import '../../domain/services/call_service.dart';
 
 class CallsListScreen extends StatefulWidget {
   const CallsListScreen({super.key});
@@ -17,35 +15,6 @@ class CallsListScreen extends StatefulWidget {
 
 class _CallsListScreenState extends State<CallsListScreen> {
   final _chatRepository = ChatRepository();
-  final _callService = CallService();
-  Stream<List<Map<String, dynamic>>>? _callsStream;
-
-  @override
-  void initState() {
-    super.initState();
-    _callsStream = _chatRepository.subscribeToCallHistory();
-  }
-
-  String _formatDateTime(DateTime date) {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final callDate = DateTime(date.year, date.month, date.day);
-
-    if (callDate == today) {
-      return 'Today, ${DateFormat('h:mm a').format(date)}';
-    } else if (today.difference(callDate).inDays == 1) {
-      return 'Yesterday, ${DateFormat('h:mm a').format(date)}';
-    } else {
-      return DateFormat('MMM d, h:mm a').format(date);
-    }
-  }
-
-  String _formatDuration(int seconds) {
-    final minutes = seconds ~/ 60;
-    final remainingSeconds = seconds % 60;
-    if (minutes == 0) return '${remainingSeconds}s';
-    return '${minutes}m ${remainingSeconds}s';
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -53,48 +22,34 @@ class _CallsListScreenState extends State<CallsListScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Calls'),
+        title: const Text('Calls', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 22)),
         actions: [
           IconButton(
-            icon: const Icon(Icons.delete_sweep_outlined),
-            onPressed: () {
-              // Implementation for clearing history could go here
-            },
+            icon: const Icon(Icons.add_call, color: AppColors.primary),
+            onPressed: () => context.push('/friends'),
           ),
+          const SizedBox(width: 8),
         ],
       ),
+
       body: StreamBuilder<List<Map<String, dynamic>>>(
-        stream: _callsStream,
+        stream: _chatRepository.subscribeToCallHistory(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting && !snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
 
-          final calls = snapshot.data ?? [];
-          if (calls.isEmpty) {
-            return _buildEmptyState();
-          }
+          final data = snapshot.data ?? [];
+          if (data.isEmpty) return _buildEmptyState();
 
           return ListView.builder(
-            itemCount: calls.length,
-            padding: const EdgeInsets.symmetric(vertical: 8),
+            padding: const EdgeInsets.only(bottom: 20),
+            itemCount: data.length,
             itemBuilder: (context, index) {
-              final call = calls[index];
-              final otherProfile = Profile.fromJson(call['other_participant_profile']);
-              final status = call['status'];
-              final isOutgoing = call['caller_id'] == Supabase.instance.client.auth.currentUser?.id;
-              final createdAt = DateTime.parse(call['created_at']).toLocal();
-              final duration = call['duration'] as int?;
-
-              return _buildCallItem(
-                context: context,
-                profile: otherProfile,
-                status: status,
-                isOutgoing: isOutgoing,
-                dateTime: createdAt,
-                duration: duration,
-                isDark: isDark,
-              );
+              final callMap = data[index];
+              final call = Call.fromJson(callMap);
+              // In this app structure, the other participant info might be nested or we fetch it
+              return _buildCallRow(call, isDark, callMap['other_participant']);
             },
           );
         },
@@ -102,105 +57,41 @@ class _CallsListScreenState extends State<CallsListScreen> {
     );
   }
 
-  Widget _buildCallItem({
-    required BuildContext context,
-    required Profile profile,
-    required String status,
-    required bool isOutgoing,
-    required DateTime dateTime,
-    required int? duration,
-    required bool isDark,
-  }) {
-    IconData statusIcon;
-    Color statusColor;
-    String statusText;
-
-    if (status == 'ended' || status == 'connected') {
-      statusIcon = isOutgoing ? Icons.call_made_rounded : Icons.call_received_rounded;
-      statusColor = AppColors.success;
-      statusText = isOutgoing ? 'Outgoing voice call' : 'Incoming voice call';
-    } else if (status == 'missed' || (status == 'rejected' && !isOutgoing)) {
-      statusIcon = Icons.call_missed_rounded;
-      statusColor = AppColors.error;
-      statusText = 'Missed voice call';
-    } else if (status == 'rejected' && isOutgoing) {
-      statusIcon = Icons.call_made_rounded;
-      statusColor = Colors.grey;
-      statusText = 'Declined call';
-    } else if (status == 'cancelled') {
-      statusIcon = Icons.call_made_rounded;
-      statusColor = Colors.grey;
-      statusText = 'Cancelled call';
-    } else {
-      statusIcon = Icons.call_made_rounded;
-      statusColor = AppColors.error;
-      statusText = 'Failed call';
-    }
+  Widget _buildCallRow(Call call, bool isDark, Map<String, dynamic>? otherJson) {
+    final other = otherJson != null ? otherJson : null;
+    final isMissed = call.status == 'missed' && call.type == 'incoming';
 
     return ListTile(
-      onTap: () async {
-        final convId = await _chatRepository.getOrCreateDirectConversation(profile.id);
-        if (mounted) context.push('/chat/$convId');
-      },
+      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
       leading: AppAvatar(
-        imageUrl: profile.avatarUrl,
-        initials: profile.fullName ?? 'U',
-        size: 50,
+        imageUrl: other?['avatar_url'],
+        initials: other?['full_name'] ?? 'U',
+        size: 54,
+        showOnlineIndicator: other?['is_online'] ?? false,
       ),
       title: Text(
-        profile.fullName ?? 'User',
-        style: const TextStyle(fontWeight: FontWeight.bold),
+        other?['full_name'] ?? 'Unknown User',
+        style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: isMissed ? AppColors.error : (isDark ? Colors.white : Colors.black)),
       ),
       subtitle: Row(
         children: [
-          Icon(statusIcon, size: 14, color: statusColor),
-          const SizedBox(width: 4),
-          Expanded(
-            child: Text(
-              '$statusText • ${_formatDateTime(dateTime)}',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: status == 'missed' ? AppColors.error : Colors.grey,
-                fontSize: 12,
-              ),
-            ),
+          Icon(
+            call.type == 'outgoing' ? Icons.call_made_rounded : Icons.call_received_rounded,
+            size: 14,
+            color: isMissed ? AppColors.error : Colors.grey,
+          ),
+          const SizedBox(width: 6),
+          Text(
+            '${DateFormat('MMM d, h:mm a').format(call.createdAt)} ${call.duration != null ? '(${call.duration}s)' : ''}',
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: Colors.grey),
           ),
         ],
       ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (duration != null \u0026\u0026 duration \u003e 0)
-            Padding(
-              padding: const EdgeInsets.only(right: 12),
-              child: Text(
-                _formatDuration(duration),
-                style: const TextStyle(color: Colors.grey, fontSize: 12),
-              ),
-            ),
-          IconButton(
-            icon: const Icon(Icons.call_outlined, color: AppColors.primary, size: 22),
-            onPressed: () => _startCall(profile),
-          ),
-        ],
+      trailing: IconButton(
+        icon: const Icon(Icons.call_outlined, color: AppColors.primary, size: 22),
+        onPressed: () => context.push('/user/${other?['id']}'),
       ),
     );
-  }
-
-  Future<void> _startCall(Profile profile) async {
-    try {
-      await _callService.initCall(profile.id);
-      if (mounted) {
-        context.push('/outgoing-call', extra: profile);
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not start call: $e')),
-        );
-      }
-    }
   }
 
   Widget _buildEmptyState() {
@@ -208,12 +99,15 @@ class _CallsListScreenState extends State<CallsListScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.call_end_rounded, size: 64, color: Colors.grey.withValues(alpha: 0.3)),
-          const SizedBox(height: 16),
-          const Text(
-            'No calls yet',
-            style: TextStyle(color: Colors.grey, fontSize: 16, fontWeight: FontWeight.w500),
+          Container(
+            padding: const EdgeInsets.all(28),
+            decoration: BoxDecoration(color: AppColors.primary.withValues(alpha: 0.08), shape: BoxShape.circle),
+            child: const Icon(Icons.phone_missed_rounded, size: 48, color: AppColors.primary),
           ),
+          const SizedBox(height: 32),
+          const Text('No calls yet', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+          const SizedBox(height: 8),
+          const Text('Your call history will appear here.', style: TextStyle(color: Colors.grey, fontWeight: FontWeight.w500)),
         ],
       ),
     );

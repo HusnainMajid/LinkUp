@@ -1,5 +1,5 @@
 -- Simplify get_call_history and ensure both directions are visible
--- Also return raw created_at to let the client handle timezone conversion naturally
+-- Using Unix milliseconds for maximum reliability across timezones
 CREATE OR REPLACE FUNCTION get_call_history()
 RETURNS JSONB AS $$
 DECLARE
@@ -9,6 +9,7 @@ BEGIN
     FROM (
         SELECT
             vc.*,
+            (EXTRACT(EPOCH FROM vc.created_at) * 1000)::BIGINT as created_at_ms,
             jsonb_build_object(
                 'id', p.id,
                 'full_name', p.full_name,

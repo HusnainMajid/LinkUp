@@ -8,7 +8,7 @@ class Moment {
   final String type; // 'text' or 'image'
   final String? backgroundColor;
   final DateTime createdAt;
-  final DateTime expires_at;
+  final DateTime expiresAt;
   final DateTime updatedAt;
   final Profile? user;
   final int viewerCount;
@@ -22,7 +22,7 @@ class Moment {
     required this.type,
     this.backgroundColor,
     required this.createdAt,
-    required this.expires_at,
+    required this.expiresAt,
     required this.updatedAt,
     this.user,
     this.viewerCount = 0,
@@ -38,7 +38,7 @@ class Moment {
       type: json['type'],
       backgroundColor: json['background_color'],
       createdAt: DateTime.parse(json['created_at']),
-      expires_at: DateTime.parse(json['expires_at']),
+      expiresAt: DateTime.parse(json['expires_at']),
       updatedAt: DateTime.parse(json['updated_at']),
       user: json['user'] != null ? Profile.fromJson(json['user']) : null,
       viewerCount: json['viewer_count'] ?? 0,
@@ -55,7 +55,7 @@ class Moment {
       'type': type,
       'background_color': backgroundColor,
       'created_at': createdAt.toIso8601String(),
-      'expires_at': expires_at.toIso8601String(),
+      'expires_at': expiresAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
     };
   }

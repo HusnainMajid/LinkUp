@@ -24,57 +24,73 @@ class MomentRing extends StatelessWidget {
       padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        border: Border.all(
-          color: isCurrentUser 
-              ? Colors.grey.withValues(alpha: 0.3)
-              : (isUnseen ? AppColors.primary : Colors.grey.withValues(alpha: 0.3)),
+        gradient: isUnseen ? AppColors.primaryGradient : null,
+        border: !isUnseen ? Border.all(
+          color: Colors.grey.withValues(alpha: 0.2),
           width: 2,
-        ),
+        ) : null,
       ),
-      child: child,
+      child: Container(
+        padding: const EdgeInsets.all(2),
+        decoration: BoxDecoration(
+          color: Theme.of(context).scaffoldBackgroundColor,
+          shape: BoxShape.circle,
+        ),
+        child: child,
+      ),
     );
   }
 }
 
-class AddMomentButton extends StatelessWidget {
-  final VoidCallback onTap;
+class UserMomentButton extends StatelessWidget {
+  final VoidCallback onAdd;
+  final VoidCallback onView;
   final String? avatarUrl;
   final String? initials;
+  final bool hasActiveMoments;
 
-  const AddMomentButton({
+  const UserMomentButton({
     super.key,
-    required this.onTap,
+    required this.onAdd,
+    required this.onView,
     this.avatarUrl,
     this.initials,
+    this.hasActiveMoments = false,
   });
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return InkWell(
-      onTap: onTap,
+      onTap: hasActiveMoments ? onView : onAdd,
       borderRadius: BorderRadius.circular(20),
       child: Column(
         children: [
           Stack(
             children: [
               MomentRing(
+                isUnseen: hasActiveMoments,
                 isCurrentUser: true,
                 child: AppAvatar(
                   imageUrl: avatarUrl,
-                  initials: initials ?? 'U',
+                  initials: initials ?? 'Me',
                   size: 58,
                 ),
               ),
               Positioned(
                 right: 0,
                 bottom: 0,
-                child: Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: const BoxDecoration(
-                    color: AppColors.primary,
-                    shape: BoxShape.circle,
+                child: GestureDetector(
+                  onTap: onAdd,
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: isDark ? AppColors.backgroundDark : Colors.white, width: 2),
+                    ),
+                    child: const Icon(Icons.add_rounded, color: Colors.white, size: 14),
                   ),
-                  child: const Icon(Icons.add_rounded, color: Colors.white, size: 14),
                 ),
               ),
             ],
@@ -82,7 +98,7 @@ class AddMomentButton extends StatelessWidget {
           const SizedBox(height: 8),
           const Text(
             'My Moment',
-            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
           ),
         ],
       ),

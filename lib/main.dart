@@ -5,6 +5,8 @@ import 'config/supabase_config.dart';
 import 'core/routing/app_router.dart';
 import 'core/theme/app_theme.dart';
 import 'core/notifications/notification_service.dart';
+import 'core/settings/settings_service.dart';
+import 'features/chat/domain/services/presence_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -29,6 +31,13 @@ void main() async {
   // Initialize Notifications
   await NotificationService().initialize();
   
+  // Initialize Presence
+  PresenceService().initialize();
+
+  // Initialize Settings
+  final settingsService = SettingsService();
+  await settingsService.initialize();
+  
   runApp(const LinkUpApp());
 }
 
@@ -37,13 +46,19 @@ class LinkUpApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp.router(
-      title: 'LinkUp',
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.lightTheme,
-      darkTheme: AppTheme.darkTheme,
-      themeMode: ThemeMode.system,
-      routerConfig: AppRouter.router,
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: SettingsService().themeMode,
+      builder: (context, mode, child) {
+        return MaterialApp.router(
+          title: 'LinkUp',
+          debugShowCheckedModeBanner: false,
+          theme: AppTheme.lightTheme,
+          darkTheme: AppTheme.darkTheme,
+          themeMode: mode,
+          routerConfig: AppRouter.router,
+        );
+      },
     );
   }
 }
+

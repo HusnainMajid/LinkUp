@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import '../../../../core/constants/app_sizes.dart';
 import '../../../../core/theme/app_colors.dart';
-import '../../../../shared/widgets/app_button.dart';
-import '../../../../shared/widgets/app_card.dart';
+import '../../../../core/utils/date_formatter.dart';
 import '../../../../shared/widgets/app_avatar.dart';
+import '../../../../shared/widgets/app_card.dart';
+import '../../../../shared/widgets/app_button.dart';
 import '../../data/profile_repository.dart';
 import '../../../auth/models/profile_model.dart';
 import '../../../auth/services/auth_service.dart';
@@ -21,7 +21,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final _authService = AuthService();
   Profile? _profile;
   bool _isLoading = true;
-  String? _error;
 
   @override
   void initState() {
@@ -32,19 +31,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _loadProfile() async {
     try {
       final profile = await _profileRepository.getCurrentProfile();
-      if (mounted) {
-        setState(() {
-          _profile = profile;
-          _isLoading = false;
-        });
-      }
+      if (mounted) setState(() { _profile = profile; _isLoading = false; });
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _error = 'Unable to load profile';
-          _isLoading = false;
-        });
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -52,19 +41,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Logout'),
-        content: const Text('Are you sure you want to logout?'),
+        title: const Text('Logout?', style: TextStyle(fontWeight: FontWeight.w900)),
+        content: const Text('You will need to sign in again to access your account.'),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
           TextButton(
             onPressed: () async {
               Navigator.pop(context);
               await _authService.signOut();
             },
-            child: const Text('Logout', style: TextStyle(color: AppColors.error)),
+            child: const Text('Logout', style: TextStyle(color: AppColors.error, fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -73,214 +59,179 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
-    }
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    if (_error != null) {
-      return Scaffold(
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(_error!),
-              Gap.h16,
-              AppButton(
-                text: 'Retry',
-                onPressed: _loadProfile,
-              ),
-            ],
-          ),
-        ),
-      );
-    }
+    if (_isLoading) return const Scaffold(body: Center(child: CircularProgressIndicator()));
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Profile'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.settings_outlined, size: 22),
-            onPressed: () {},
+      backgroundColor: isDark ? AppColors.backgroundDark : const Color(0xFFF8F9FA),
+      body: CustomScrollView(
+        slivers: [
+          _buildSliverAppBar(isDark),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Column(
+                children: [
+                  const SizedBox(height: 20),
+                  _buildMainInfo(isDark),
+                  const SizedBox(height: 40),
+                  _buildAccountSection(),
+                  const SizedBox(height: 32),
+                  _buildGeneralSection(),
+                  const SizedBox(height: 48),
+                  AppButton(text: 'Logout', type: AppButtonType.secondary, height: 50, onPressed: _confirmLogout),
+                  const SizedBox(height: 100),
+                ],
+              ),
+            ),
           ),
         ],
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-        child: Column(
-          children: [
-            _buildProfileHeader(),
-            const SizedBox(height: 32),
-            _buildProfileSection(
-              'Information',
-              [
-                _buildProfileItem(Icons.alternate_email_rounded, 'Username', '@${_profile?.username ?? 'username'}'),
-                _buildProfileItem(Icons.mail_outline_rounded, 'Email', _authService.currentUser?.email ?? ''),
-                _buildProfileItem(Icons.info_outline_rounded, 'Bio', _profile?.bio ?? 'No bio set'),
-                _buildProfileItem(Icons.phone_outlined, 'Phone', _profile?.phone ?? 'Not provided'),
-              ],
-            ),
-            const SizedBox(height: 24),
-            _buildProfileSection(
-              'Account',
-              [
-                _buildActionTile(Icons.person_outline_rounded, 'Edit Profile', () {
-                  context.push('/profile/edit').then((_) => _loadProfile());
-                }),
-                _buildActionTile(Icons.shield_outlined, 'Security & Privacy', () {}),
-                _buildActionTile(Icons.notifications_none_rounded, 'Notifications', () {}),
-                _buildActionTile(Icons.help_outline_rounded, 'Help Center', () {}),
-              ],
-            ),
-            const SizedBox(height: 32),
-            AppButton(
-              text: 'Sign Out',
-              type: AppButtonType.outlined,
-              onPressed: _confirmLogout,
-            ),
-            const SizedBox(height: 32),
-            Text(
-              'LinkUp Premium v1.0.0',
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: Colors.grey.withValues(alpha: 0.6),
-                  ),
-            ),
-            const SizedBox(height: 24),
-          ],
-        ),
       ),
     );
   }
 
-  Widget _buildProfileHeader() {
+  Widget _buildSliverAppBar(bool isDark) {
+    return SliverAppBar(
+      expandedHeight: 100,
+      pinned: true,
+      backgroundColor: isDark ? AppColors.backgroundDark : Colors.white,
+      centerTitle: true,
+      elevation: 0,
+      scrolledUnderElevation: 0,
+      title: const Text('My Profile', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 20)),
+      actions: [
+        IconButton(
+          onPressed: () => context.push('/profile/settings'),
+          icon: const Icon(Icons.settings_outlined, color: AppColors.primary, size: 24),
+        ),
+        const SizedBox(width: 12),
+      ],
+    );
+  }
+
+  Widget _buildMainInfo(bool isDark) {
     return Column(
       children: [
-        Hero(
-          tag: 'profile_avatar',
-          child: AppAvatar(
-            imageUrl: _profile?.avatarUrl,
-            initials: _profile?.fullName ?? 'H',
-            size: 100,
+        Stack(
+          children: [
+            Hero(
+              tag: 'profile_avatar',
+              child: AppAvatar(imageUrl: _profile?.avatarUrl, initials: _profile?.fullName ?? 'U', size: 120),
+            ),
+            Positioned(
+              right: 4,
+              bottom: 4,
+              child: Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  color: AppColors.success,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: isDark ? AppColors.backgroundDark : Colors.white, width: 4),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 24),
+        Text(_profile?.fullName ?? 'User', style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w900, letterSpacing: -0.5)),
+        const SizedBox(height: 6),
+        Text('@${_profile?.username ?? 'username'}', style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.w800, fontSize: 16)),
+        if (_profile?.bio != null && _profile!.bio!.isNotEmpty) ...[
+          const SizedBox(height: 20),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Text(
+              _profile!.bio!,
+              textAlign: TextAlign.center,
+              style: TextStyle(color: isDark ? Colors.white70 : AppColors.textSecondary, fontSize: 15, height: 1.5, fontWeight: FontWeight.w500),
+            ),
           ),
-        ),
-        const SizedBox(height: 16),
-        Text(
-          _profile?.fullName ?? 'Husnain',
-          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                fontWeight: FontWeight.bold,
-              ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          '@${_profile?.username ?? 'username'}',
-          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                color: AppColors.primary,
-                fontWeight: FontWeight.w600,
-              ),
+        ],
+        const SizedBox(height: 32),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+             _buildStatItem('Active', DateFormatter.formatChatDate(_profile?.lastSeen ?? DateTime.now())),
+             _buildStatDivider(),
+             _buildStatItem('Joined', 'Aug 2026'),
+          ],
         ),
       ],
     );
   }
 
-  Widget _buildProfileSection(String title, List<Widget> items) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+  Widget _buildStatItem(String label, String value) {
+    return Column(
+      children: [
+        Text(value, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+        const SizedBox(height: 4),
+        Text(label, style: const TextStyle(color: Colors.grey, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
+      ],
+    );
+  }
 
+  Widget _buildStatDivider() {
+    return Container(height: 28, width: 1.5, margin: const EdgeInsets.symmetric(horizontal: 40), color: Colors.grey.withValues(alpha: 0.15));
+  }
+
+  Widget _buildAccountSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: const EdgeInsets.only(left: 4, bottom: 12),
-          child: Text(
-            title.toUpperCase(),
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: isDark ? AppColors.textTertiaryDark : AppColors.textTertiary,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 1.2,
-                ),
-          ),
-        ),
+        _buildSectionTitle('ACCOUNT'),
         AppCard(
           padding: EdgeInsets.zero,
           child: Column(
-            children: items,
+            children: [
+              _buildMenuTile(Icons.person_outline_rounded, 'Edit Profile', 'Update personal info', () { context.push('/profile/edit').then((_) => _loadProfile()); }),
+              _buildMenuTile(Icons.alternate_email_rounded, 'Email', _authService.currentUser?.email ?? '', () {}),
+              _buildMenuTile(Icons.phone_outlined, 'Phone', _profile?.phone ?? 'Not set', () {}),
+            ],
           ),
         ),
       ],
     );
   }
 
-  Widget _buildProfileItem(IconData icon, String label, String value) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(
-            color: isDark ? Colors.white.withValues(alpha: 0.05) : Colors.grey.shade100,
-            width: 1,
+  Widget _buildGeneralSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionTitle('PREFERENCES'),
+        AppCard(
+          padding: EdgeInsets.zero,
+          child: Column(
+            children: [
+              _buildMenuTile(Icons.shield_outlined, 'Privacy', 'Online status & visibility', () => context.push('/profile/settings')),
+              _buildMenuTile(Icons.notifications_none_rounded, 'Notifications', 'Alerts & sounds', () => context.push('/profile/settings')),
+              _buildMenuTile(Icons.palette_outlined, 'Appearance', 'Dark mode & theme', () => context.push('/profile/settings')),
+            ],
           ),
         ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: isDark ? AppColors.backgroundDark : Colors.grey.shade50,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(icon, size: 18, color: AppColors.primary),
-          ),
-          const SizedBox(height: 16),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label, 
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: isDark ? AppColors.textTertiaryDark : AppColors.textTertiary,
-                  )
-                ),
-                Text(
-                  value, 
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    fontWeight: FontWeight.w500,
-                  )
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+      ],
     );
   }
 
-  Widget _buildActionTile(IconData icon, String label, VoidCallback onTap) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+  Widget _buildSectionTitle(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 8, bottom: 12),
+      child: Text(title, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: AppColors.primary, letterSpacing: 1.5)),
+    );
+  }
 
+  Widget _buildMenuTile(IconData icon, String title, String sub, VoidCallback onTap) {
     return ListTile(
-      leading: Container(
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(
-          color: isDark ? AppColors.backgroundDark : Colors.grey.shade50,
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Icon(icon, size: 18, color: AppColors.primary),
-      ),
-      title: Text(
-        label, 
-        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-          fontWeight: FontWeight.w500,
-        )
-      ),
-      trailing: const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Colors.grey),
       onTap: onTap,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      leading: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(color: AppColors.primary.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(12)),
+        child: Icon(icon, color: AppColors.primary, size: 20),
+      ),
+      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15)),
+      subtitle: Text(sub, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: Colors.grey)),
+      trailing: const Icon(Icons.chevron_right_rounded, size: 18, color: Colors.grey),
     );
   }
 }

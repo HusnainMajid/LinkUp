@@ -1,4 +1,6 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../shared/widgets/app_button.dart';
 import '../../../../shared/widgets/app_text_field.dart';
@@ -23,6 +25,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   Profile? _profile;
   bool _isLoading = true;
   bool _isSaving = false;
+  File? _selectedImage;
 
   @override
   void initState() {
@@ -48,16 +51,38 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     }
   }
 
+  Future<void> _pickImage() async {
+    final picker = ImagePicker();
+    final image = await picker.pickImage(source: ImageSource.gallery, imageQuality: 70);
+    if (image != null) {
+      setState(() {
+        _selectedImage = File(image.path);
+      });
+    }
+  }
+
   Future<void> _saveProfile() async {
     if (_profile == null) return;
 
     setState(() => _isSaving = true);
     try {
+      String? avatarUrl = _profile!.avatarUrl;
+
+      // 1. Upload avatar if selected
+      if (_selectedImage != null) {
+        final uploadedUrl = await _profileRepository.uploadAvatar(_selectedImage!);
+        if (uploadedUrl != null) {
+          avatarUrl = uploadedUrl;
+        }
+      }
+
+      // 2. Update profile data
       final updatedProfile = _profile!.copyWith(
         fullName: _nameController.text.trim(),
         username: _usernameController.text.trim(),
         bio: _bioController.text.trim(),
         phone: _phoneController.text.trim(),
+        avatarUrl: avatarUrl,
         updatedAt: DateTime.now(),
       );
 
@@ -95,46 +120,62 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         child: Column(
           children: [
             Center(
-              child: Stack(
-                children: [
-                  Hero(
-                    tag: 'profile_avatar',
-                    child: AppAvatar(
-                      imageUrl: _profile?.avatarUrl,
-                      initials: _profile?.fullName ?? 'H',
-                      size: 100,
-                    ),
-                  ),
-                  Positioned(
-                    right: 0,
-                    bottom: 0,
-                    child: Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: AppColors.primary,
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          color: Theme.of(context).scaffoldBackgroundColor,
-                          width: 3,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: AppColors.primary.withValues(alpha: 0.3),
-                            blurRadius: 10,
-                            offset: const Offset(0, 4),
+              child: GestureDetector(
+                onTap: _pickImage,
+                child: Stack(
+                  children: [
+                    Hero(
+                      tag: 'profile_avatar',
+                      child: _selectedImage != null 
+                        ? Container(
+                            width: 100,
+                            height: 100,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              image: DecorationImage(
+                                image: FileImage(_selectedImage!),
+                                fit: BoxFit.cover,
+                              ),
+                            ),
                           )
-                        ],
-                      ),
-                      child: const Icon(
-                        Icons.camera_alt_rounded,
-                        size: 18,
-                        color: Colors.white,
+                        : AppAvatar(
+                            imageUrl: _profile?.avatarUrl,
+                            initials: _profile?.fullName ?? 'H',
+                            size: 100,
+                          ),
+                    ),
+                    Positioned(
+                      right: 0,
+                      bottom: 0,
+                      child: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: Theme.of(context).scaffoldBackgroundColor,
+                            width: 3,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppColors.primary.withValues(alpha: 0.3),
+                              blurRadius: 10,
+                              offset: const Offset(0, 4),
+                            )
+                          ],
+                        ),
+                        child: const Icon(
+                          Icons.camera_alt_rounded,
+                          size: 18,
+                          color: Colors.white,
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
+
             const SizedBox(height: 32),
             AppTextField(
               label: 'Full Name',

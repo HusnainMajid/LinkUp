@@ -2,8 +2,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
-import '../../../../core/theme/app_colors.dart';
 import '../../data/repositories/moment_repository.dart';
+
 
 class CreateImageMomentScreen extends StatefulWidget {
   final XFile image;
@@ -81,21 +81,34 @@ class _CreateImageMomentScreenState extends State<CreateImageMomentScreen> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.5),
+                color: Colors.white,
                 borderRadius: BorderRadius.circular(24),
-                border: Border.all(color: Colors.white24),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.2),
+                    blurRadius: 10,
+                  ),
+                ],
               ),
-              child: TextField(
-                controller: _captionController,
-                style: const TextStyle(color: Colors.white),
-                decoration: const InputDecoration(
-                  hintText: 'Add a caption...',
-                  hintStyle: TextStyle(color: Colors.white60),
-                  border: InputBorder.none,
+              child: Theme(
+                data: Theme.of(context).copyWith(
+                  textSelectionTheme: const TextSelectionThemeData(cursorColor: Colors.black),
+                ),
+                child: TextField(
+                  controller: _captionController,
+                  style: const TextStyle(color: Colors.black),
+                  decoration: const InputDecoration(
+                    hintText: 'Add a caption...',
+                    hintStyle: TextStyle(color: Colors.black38),
+                    border: InputBorder.none,
+                    contentPadding: EdgeInsets.symmetric(vertical: 12),
+                  ),
                 ),
               ),
+
             ),
           ),
+
         ],
       ),
     );

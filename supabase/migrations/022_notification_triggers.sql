@@ -6,33 +6,32 @@ RETURNS TRIGGER AS $$
 DECLARE
   payload JSONB;
 BEGIN
+  -- Construct the payload
   payload := jsonb_build_object(
     'record', row_to_json(NEW),
     'table', TG_TABLE_NAME,
     'type', TG_OP
   );
 
-  -- We use pg_net if available to call the Edge Function asynchronously
-  -- In a managed Supabase environment, this is the most reliable way.
-  -- The URL is constructed dynamically or hardcoded if preferred.
-  -- For this project, we know the project ref is szlimfkzfnaqfybtziar.
-
-  PERFORM net.http_post(
-    url := 'https://szlimfkzfnaqfybtziar.supabase.co/functions/v1/push-notifications',
-    headers := jsonb_build_object(
-      'Content-Type', 'application/json',
-      'Authorization', 'Bearer ' || current_setting('request.jwt.claims', true)::jsonb->>'role' -- This might not work in triggers, usually we use service role or hardcoded anon
-    ),
-    body := payload
-  );
-
-  -- Note: If you encounter authorization issues, you may need to use a dedicated secret
-  -- or set up the Webhook via the Supabase Dashboard UI which handles auth automatically.
+  -- Call the Edge Function asynchronously
+  -- We use a literal JSONB object for headers to avoid parsing errors
+  -- We also wrap it in a nested block to prevent notification failures from breaking the message insert
+  BEGIN
+    PERFORM net.http_post(
+      url := 'https://szlimfkzfnaqfybtziar.supabase.co/functions/v1/push-notifications',
+      headers := '{"Content-Type": "application/json"}'::jsonb,
+      body := payload
+    );
+  EXCEPTION WHEN OTHERS THEN
+    -- Log error or ignore to ensure the main transaction (sending the message) succeeds
+    RAISE WARNING 'Push notification trigger failed: %', SQLERRM;
+  END;
 
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
+-- Ensure triggers are correctly attached
 -- Triggers for messages
 DROP TRIGGER IF EXISTS on_message_inserted_notify ON messages;
 CREATE TRIGGER on_message_inserted_notify

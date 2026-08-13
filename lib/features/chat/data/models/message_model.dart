@@ -4,6 +4,7 @@ class Message {
   final String id;
   final String conversationId;
   final String senderId;
+  final String? senderName;
   final String content;
   final String messageType;
   final DateTime createdAt;
@@ -24,6 +25,7 @@ class Message {
     required this.id,
     required this.conversationId,
     required this.senderId,
+    this.senderName,
     required this.content,
     required this.messageType,
     required this.createdAt,
@@ -46,6 +48,7 @@ class Message {
       id: json['id'] ?? '',
       conversationId: json['conversation_id'] ?? '',
       senderId: json['sender_id'] ?? '',
+      senderName: json['sender_name'],
       content: json['content'] ?? '',
       messageType: json['message_type'] ?? 'text',
       createdAt: json['created_at'] != null 
@@ -89,6 +92,7 @@ class Message {
 
   Message copyWith({
     String? content,
+    String? senderName,
     DateTime? editedAt,
     DateTime? deletedAt,
     DateTime? deliveredAt,
@@ -99,6 +103,7 @@ class Message {
       id: id,
       conversationId: conversationId,
       senderId: senderId,
+      senderName: senderName ?? this.senderName,
       content: content ?? this.content,
       messageType: messageType,
       createdAt: createdAt,

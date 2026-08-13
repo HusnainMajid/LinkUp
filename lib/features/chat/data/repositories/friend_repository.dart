@@ -22,6 +22,15 @@ class FriendRepository {
     }).eq('id', requestId);
   }
 
+  Future<void> acceptFriendRequest(String senderId) async {
+    final userId = _supabase.auth.currentUser!.id;
+    await _supabase.from('friend_requests').update({
+      'status': 'accepted',
+      'updated_at': DateTime.now().toIso8601String(),
+    }).eq('sender_id', senderId).eq('receiver_id', userId);
+  }
+
+
   Future<void> cancelFriendRequest(String requestId) async {
     await _supabase.from('friend_requests').update({
       'status': 'cancelled',

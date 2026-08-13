@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:rxdart/rxdart.dart';
 import '../models/hub_models.dart';
 
 class HubRepository {
@@ -145,38 +146,33 @@ class HubRepository {
         .from('tasks')
         .stream(primaryKey: ['id'])
         .eq('user_id', userId)
-        .eq('completed', false);
+        .map((list) => list.where((item) => item['completed'] == false).length);
 
     final eventsStream = _supabase
         .from('events')
         .stream(primaryKey: ['id'])
         .eq('user_id', userId)
-        .gte('event_date', DateTime.now().toIso8601String());
+        .map((list) => list.where((item) {
+              final date = DateTime.parse(item['event_date']);
+              return date.isAfter(DateTime.now());
+            }).length);
 
     final notesStream = _supabase
         .from('notes')
         .stream(primaryKey: ['id'])
-        .eq('user_id', userId);
+        .eq('user_id', userId)
+        .map((list) => list.length);
 
-    // Combine streams using RxDart if available, or manually
-    // Since I saw rxdart in pubspec.yaml:
-    // But I'll use StreamZip or just manual combine to avoid extra imports if possible.
-    // Actually Rx.combineLatest3 is cleaner.
-
-    return _supabase.from('tasks').stream(primaryKey: ['id']).eq('user_id', userId).map((_) => null).asyncMap((_) async {
-      final results = await Future.wait([
-        _supabase.from('tasks').select('id', const FetchOptions(count: CountOption.exact)).eq('user_id', userId).eq('completed', false),
-        _supabase.from('events').select('id', const FetchOptions(count: CountOption.exact)).eq('user_id', userId).gte('event_date', DateTime.now().toIso8601String()),
-        _supabase.from('notes').select('id', const FetchOptions(count: CountOption.exact)).eq('user_id', userId),
-      ]);
-
-      return {
-        'tasks': (results[0] as PostgrestResponse).count ?? 0,
-        'events': (results[1] as PostgrestResponse).count ?? 0,
-        'notes': (results[2] as PostgrestResponse).count ?? 0,
-      };
-    });
-    // Wait, the above manual map might not be perfectly realtime for all three.
-    // Let's use Rx.combineLatest3 since I know it's there.
+    return Rx.combineLatest3(
+      tasksStream,
+      eventsStream,
+      notesStream,
+      (tasks, events, notes) => {
+        'tasks': tasks,
+        'events': events,
+        'notes': notes,
+      },
+    );
   }
 }
+

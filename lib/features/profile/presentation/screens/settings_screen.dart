@@ -9,22 +9,20 @@ class SettingsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final settingsService = SettingsService();
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Settings'),
+        title: const Text('Settings', style: TextStyle(fontWeight: FontWeight.w900)),
+        centerTitle: true,
       ),
       body: ValueListenableBuilder(
         valueListenable: settingsService.settings,
         builder: (context, settings, child) {
-          if (settings == null) {
-            return const Center(child: CircularProgressIndicator());
-          }
+          if (settings == null) return const Center(child: CircularProgressIndicator());
 
           return ListView(
-            padding: const EdgeInsets.all(20),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
             children: [
               _buildSectionHeader('PRIVACY'),
               AppCard(
@@ -38,6 +36,7 @@ class SettingsScreen extends StatelessWidget {
                       value: settings.showOnlineStatus,
                       onChanged: (v) => settingsService.updatePrivacy('show_online_status', v),
                     ),
+                    const Divider(indent: 56),
                     SettingsToggleTile(
                       icon: Icons.access_time_rounded,
                       title: 'Last Seen',
@@ -45,6 +44,7 @@ class SettingsScreen extends StatelessWidget {
                       value: settings.showLastSeen,
                       onChanged: (v) => settingsService.updatePrivacy('show_last_seen', v),
                     ),
+                    const Divider(indent: 56),
                     SettingsToggleTile(
                       icon: Icons.person_search_rounded,
                       title: 'Allow Discovery',
@@ -55,7 +55,7 @@ class SettingsScreen extends StatelessWidget {
                   ],
                 ),
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 32),
               
               _buildSectionHeader('NOTIFICATIONS'),
               AppCard(
@@ -69,6 +69,7 @@ class SettingsScreen extends StatelessWidget {
                       value: settings.notifyMessages,
                       onChanged: (v) => settingsService.updateNotification('notify_messages', v),
                     ),
+                    const Divider(indent: 56),
                     SettingsToggleTile(
                       icon: Icons.call_outlined,
                       title: 'Calls',
@@ -76,6 +77,7 @@ class SettingsScreen extends StatelessWidget {
                       value: settings.notifyCalls,
                       onChanged: (v) => settingsService.updateNotification('notify_calls', v),
                     ),
+                    const Divider(indent: 56),
                     SettingsToggleTile(
                       icon: Icons.auto_awesome_mosaic_outlined,
                       title: 'Moments',
@@ -86,7 +88,7 @@ class SettingsScreen extends StatelessWidget {
                   ],
                 ),
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 32),
 
               _buildSectionHeader('APPEARANCE'),
               AppCard(
@@ -95,39 +97,29 @@ class SettingsScreen extends StatelessWidget {
                   children: [
                     SettingsActionTile(
                       icon: Icons.palette_outlined,
-                      title: 'Theme',
-                      value: settings.themeMode.toUpperCase(),
+                      title: 'Theme Mode',
+                      value: _formatThemeName(settings.themeMode),
                       onTap: () => _showThemePicker(context, settingsService),
                     ),
                   ],
                 ),
               ),
-              const SizedBox(height: 24),
+              const SizedBox(height: 32),
 
               _buildSectionHeader('ABOUT'),
               AppCard(
                 padding: EdgeInsets.zero,
                 child: Column(
                   children: [
-                    const SettingsInfoTile(
-                      icon: Icons.info_outline_rounded,
-                      title: 'Version',
-                      value: '1.0.0 (Build 1)',
-                    ),
-                    SettingsActionTile(
-                      icon: Icons.description_outlined,
-                      title: 'Privacy Policy',
-                      onTap: () {},
-                    ),
-                    SettingsActionTile(
-                      icon: Icons.gavel_rounded,
-                      title: 'Terms of Service',
-                      onTap: () {},
-                    ),
+                    const SettingsInfoTile(icon: Icons.info_outline_rounded, title: 'App Version', value: '1.0.0 (Gold)'),
+                    const Divider(indent: 56),
+                    SettingsActionTile(icon: Icons.description_outlined, title: 'Privacy Policy', onTap: () {}),
+                    const Divider(indent: 56),
+                    SettingsActionTile(icon: Icons.gavel_rounded, title: 'Terms of Service', onTap: () {}),
                   ],
                 ),
               ),
-              const SizedBox(height: 48),
+              const SizedBox(height: 60),
             ],
           );
         },
@@ -135,17 +127,17 @@ class SettingsScreen extends StatelessWidget {
     );
   }
 
+  String _formatThemeName(String mode) {
+    if (mode == 'system') return 'System Default';
+    return mode.substring(0, 1).toUpperCase() + mode.substring(1);
+  }
+
   Widget _buildSectionHeader(String title) {
     return Padding(
       padding: const EdgeInsets.only(left: 12, bottom: 12),
       child: Text(
         title,
-        style: const TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w800,
-          color: AppColors.primary,
-          letterSpacing: 1.5,
-        ),
+        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: AppColors.primary, letterSpacing: 1.5),
       ),
     );
   }
@@ -153,36 +145,42 @@ class SettingsScreen extends StatelessWidget {
   void _showThemePicker(BuildContext context, SettingsService service) {
     showModalBottomSheet(
       context: context,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (context) => SafeArea(
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        decoration: BoxDecoration(color: Theme.of(context).scaffoldBackgroundColor, borderRadius: const BorderRadius.vertical(top: Radius.circular(28))),
+        padding: const EdgeInsets.only(top: 12, bottom: 24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const SizedBox(height: 12),
-            Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(2))),
-            const Padding(
-              padding: EdgeInsets.all(20),
-              child: Text('Choose Theme', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-            ),
+            Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey.withValues(alpha: 0.3), borderRadius: BorderRadius.circular(2))),
+            const Padding(padding: EdgeInsets.all(24), child: Text('Choose Appearance', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18))),
             ListTile(
-              leading: const Icon(Icons.brightness_auto_rounded),
-              title: const Text('System Default'),
+              leading: _buildPickerIcon(Icons.brightness_auto_rounded),
+              title: const Text('System Default', style: TextStyle(fontWeight: FontWeight.bold)),
               onTap: () { service.updateThemeMode(ThemeMode.system); Navigator.pop(context); },
             ),
             ListTile(
-              leading: const Icon(Icons.light_mode_rounded),
-              title: const Text('Light Mode'),
+              leading: _buildPickerIcon(Icons.light_mode_rounded),
+              title: const Text('Light Mode', style: TextStyle(fontWeight: FontWeight.bold)),
               onTap: () { service.updateThemeMode(ThemeMode.light); Navigator.pop(context); },
             ),
             ListTile(
-              leading: const Icon(Icons.dark_mode_rounded),
-              title: const Text('Dark Mode'),
+              leading: _buildPickerIcon(Icons.dark_mode_rounded),
+              title: const Text('Dark Mode', style: TextStyle(fontWeight: FontWeight.bold)),
               onTap: () { service.updateThemeMode(ThemeMode.dark); Navigator.pop(context); },
             ),
             const SizedBox(height: 16),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildPickerIcon(IconData icon) {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(color: AppColors.primary.withValues(alpha: 0.08), shape: BoxShape.circle),
+      child: Icon(icon, color: AppColors.primary, size: 22),
     );
   }
 }

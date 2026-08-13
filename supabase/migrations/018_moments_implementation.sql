@@ -62,6 +62,29 @@ CREATE POLICY "Moment owners can view all views of their moments." ON moment_vie
     ) OR auth.uid() = viewer_id
   );
 
+-- Storage Bucket and Policies
+INSERT INTO storage.buckets (id, name, public) VALUES ('moments', 'moments', false) ON CONFLICT (id) DO NOTHING;
+
+CREATE POLICY "Users can upload their own moments." ON storage.objects
+  FOR INSERT WITH CHECK (bucket_id = 'moments' AND auth.uid()::text = (storage.foldername(name))[1]);
+
+CREATE POLICY "Users can view friends' moments storage." ON storage.objects
+  FOR SELECT USING (
+    bucket_id = 'moments' AND (
+      auth.uid()::text = (storage.foldername(name))[1] OR
+      EXISTS (
+        SELECT 1 FROM friend_requests
+        WHERE status = 'accepted' AND (
+          (sender_id = auth.uid() AND receiver_id::text = (storage.foldername(name))[1]) OR
+          (receiver_id = auth.uid() AND sender_id::text = (storage.foldername(name))[1])
+        )
+      )
+    )
+  );
+
+CREATE POLICY "Users can delete their own moments storage." ON storage.objects
+  FOR DELETE USING (bucket_id = 'moments' AND auth.uid()::text = (storage.foldername(name))[1]);
+
 -- Indexes
 CREATE INDEX idx_moments_user_id ON moments(user_id);
 CREATE INDEX idx_moments_expires_at ON moments(expires_at);
